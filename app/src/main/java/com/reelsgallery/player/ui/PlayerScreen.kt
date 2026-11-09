@@ -406,8 +406,9 @@ fun PlayerScreen(
                             if (verticalHandled) {
                                 val distance = verticalDragOffset
                                 val targetIndex = previewIndex
+                                val mixedTarget = targetMixedIndex
                                 scope.launch {
-                                    val commitSwipe = targetIndex in safeQueue.indices && abs(distance) > size.height * 0.18f
+                                    val commitSwipe = mixedTarget in mixedQueue.indices && abs(distance) > size.height * 0.18f
                                     val destination = if (distance < 0f) -size.height.toFloat() else size.height.toFloat()
                                     val from = verticalDragOffset
                                     val to = if (commitSwipe) destination else 0f
