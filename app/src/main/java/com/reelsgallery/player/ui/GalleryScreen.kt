@@ -59,7 +59,7 @@ fun GalleryScreen(media:List<LocalMedia>,settings:SettingsStore,refreshToken:Int
   Column(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal=16.dp,vertical=8.dp)){
    Row(verticalAlignment=Alignment.CenterVertically){
     if(volume!=null) TextButton(onClick={back()}){Text("‹ Back")} else Column(Modifier.weight(1f)){Text("REELS GALLERY",style=MaterialTheme.typography.titleLarge);Text("Local media library",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}
-    if(volume!=null) Column(Modifier.weight(1f)){Text(if(path.isBlank()) roots.firstOrNull{it.volumeName==volume}?.label?:"Storage" else path.trimEnd('/').substringAfterLast('/'),maxLines=1,overflow=TextOverflow.Ellipsis);Text("\${visible.size} media files",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}
+    if(volume!=null) Column(Modifier.weight(1f)){Text(if(path.isBlank()) roots.firstOrNull{it.volumeName==volume}?.label?:"Storage" else path.trimEnd('/').substringAfterLast('/'),maxLines=1,overflow=TextOverflow.Ellipsis);Text("${visible.size} media files",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}
     IconButton(onClick={refreshing=true;onRefresh()}){Text("↻",style=MaterialTheme.typography.headlineSmall)}
     IconButton(onClick=onOpenSettings){Text("⚙",style=MaterialTheme.typography.titleLarge)}
    }
@@ -77,7 +77,7 @@ fun GalleryScreen(media:List<LocalMedia>,settings:SettingsStore,refreshToken:Int
    if(volume==null){
     if(roots.isEmpty()) EmptyGallery("No media storage found","Allow photo and video access, then refresh.")
     else LazyVerticalGrid(GridCells.Fixed(2),Modifier.fillMaxSize().navigationBarsPadding(),contentPadding=PaddingValues(14.dp),horizontalArrangement=Arrangement.spacedBy(12.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
-     items(roots,key={it.volumeName}){r->Card(Modifier.fillMaxWidth().clickable{volume=r.volumeName;path=""},shape=RoundedCornerShape(18.dp)){Column(Modifier.padding(18.dp)){Text(if(r.isRemovable)"▣" else "▤",style=MaterialTheme.typography.displaySmall);Text(r.label,style=MaterialTheme.typography.titleMedium);Text("\${r.itemCount} media files",color=MaterialTheme.colorScheme.onSurfaceVariant)}}}
+     items(roots,key={it.volumeName}){r->Card(Modifier.fillMaxWidth().clickable{volume=r.volumeName;path=""},shape=RoundedCornerShape(18.dp)){Column(Modifier.padding(18.dp)){Text(if(r.isRemovable)"▣" else "▤",style=MaterialTheme.typography.displaySmall);Text(r.label,style=MaterialTheme.typography.titleMedium);Text("${r.itemCount} media files",color=MaterialTheme.colorScheme.onSurfaceVariant)}}}
     }
    }else if(entries.isEmpty()) EmptyGallery("No matching media here","Try another filter or open a different folder.")
    else LazyVerticalGrid(GridCells.Fixed(columns),Modifier.fillMaxSize().navigationBarsPadding(),contentPadding=PaddingValues(12.dp),horizontalArrangement=Arrangement.spacedBy(9.dp),verticalArrangement=Arrangement.spacedBy(10.dp)){
