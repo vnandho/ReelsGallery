@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.WindowInsets
@@ -49,7 +50,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -132,7 +132,7 @@ fun PlayerScreen(
     DisposableEffect(window) {
         val controller = WindowCompat.getInsetsController(window, window.decorView)
         controller.show(WindowInsetsCompat.Type.systemBars())
-        controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_DEFAULT
+        controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         onDispose {
             controller.show(WindowInsetsCompat.Type.systemBars())
             val attrs = window.attributes
@@ -258,7 +258,7 @@ fun PlayerScreen(
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         AndroidView(
-            modifier = Modifier.fillMaxSize().graphicsLayer { rotationZ = rotation.toFloat() },
+            modifier = Modifier.fillMaxSize(),
             factory = { ctx ->
                 PlayerView(ctx).apply {
                     useController = false
@@ -272,7 +272,7 @@ fun PlayerScreen(
             update = { view ->
                 view.player = exoPlayer
                 view.resizeMode = resizeMode
-                view.rotation = 0f
+                view.rotation = rotation.toFloat()
             }
         )
 
@@ -294,6 +294,7 @@ fun PlayerScreen(
                     var moved = false
                     var navigated = false
                     var horizontalHandled = false
+                    val seekStart = exoPlayer.currentPosition
                     while (true) {
                         val event = awaitPointerEvent()
                         val change = event.changes.firstOrNull { it.id == down.id } ?: break
@@ -301,10 +302,12 @@ fun PlayerScreen(
                         val dy = change.position.y - start.y
                         val isVertical = abs(dy) > viewConfiguration.touchSlop && abs(dy) > abs(dx) * 1.3f
                         if (abs(dx) > viewConfiguration.touchSlop || abs(dy) > viewConfiguration.touchSlop) moved = true
-                        if (change.pressed && zone == GestureZone.CENTER && !isVertical && abs(dx) > viewConfiguration.touchSlop && abs(dx) > abs(dy) * 1.3f && !horizontalHandled) {
+                        if (change.pressed && zone == GestureZone.CENTER && !isVertical && abs(dx) > viewConfiguration.touchSlop && abs(dx) > abs(dy) * 1.3f  ) {
                             val delta = (dx / size.width.toFloat() * (durationMs.coerceAtLeast(1L) * 0.5f)).toLong()
-                            exoPlayer.seekTo((exoPlayer.currentPosition + delta).coerceIn(0L, durationMs.coerceAtLeast(1L)))
-                            overlayMessage = formatDuration(exoPlayer.currentPosition)
+                            val target = (seekStart + delta).coerceIn(0L, durationMs.coerceAtLeast(1L))
+                            exoPlayer.seekTo(target)
+                            positionMs = target
+                            overlayMessage = formatDuration(target)
                             horizontalHandled = true
                             touchInteraction()
                             change.consume()
@@ -342,13 +345,12 @@ fun PlayerScreen(
                             if (!moved) {
                                 val now = android.os.SystemClock.elapsedRealtime()
                                 if (zone == GestureZone.CENTER && now - lastCenterTap < 320L) {
-                                    val wasPlaying = exoPlayer.isPlaying
-                                    if (wasPlaying) exoPlayer.pause() else exoPlayer.play()
-                                    overlayMessage = if (wasPlaying) "Paused" else "Playing"
+                                    exoPlayer.pause()
+                                    overlayMessage = "Paused"
                                     lastCenterTap = 0L
                                 } else {
                                     lastCenterTap = now
-                                    controlsVisible = true
+                                    controlsVisible = !controlsVisible
                                     interactionId++
                                 }
                             }
@@ -367,7 +369,7 @@ fun PlayerScreen(
                     .padding(horizontal = 14.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.SpaceBetween
             ) {
-                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
                     // Top frame: back, filename and overflow settings.
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         TextButton(onClick = onClose) {
@@ -416,8 +418,8 @@ fun PlayerScreen(
                         horizontalArrangement = Arrangement.SpaceEvenly,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        TextButton(onClick = { muted = !muted; exoPlayer.volume = if (muted) 0f else 1f; touchInteraction() }) {
-                            Text(if (muted) "◖× Mute" else "◖ Mute", color = Color.White)
+                        TextButton(onClick = { muted = !muted; exoPlayer.volume = if (muted) 0f else 1f; touchInteraction() }, modifier = Modifier.size(42.dp)) {
+                            Text(if (muted) "◖̸" else "◖", color = Color.White, style = MaterialTheme.typography.titleLarge)
                         }
                         TextButton(onClick = {
                             val currentUri = safeQueue.getOrNull(exoPlayer.currentMediaItemIndex)?.uri
@@ -433,10 +435,10 @@ fun PlayerScreen(
                                 }
                             }
                         }) {
-                            Text("▣ Shot", color = Color.White)
+                            Text("▣", color = Color.White, style = MaterialTheme.typography.titleLarge)
                         }
                         TextButton(onClick = { rotation = (rotation + 90) % 360; touchInteraction() }) {
-                            Text("⤾ Rotate", color = Color.White)
+                            Text("↻", color = Color.White, style = MaterialTheme.typography.titleLarge)
                         }
                         TextButton(onClick = {
                             repeatMode = when (repeatMode) {
@@ -447,10 +449,15 @@ fun PlayerScreen(
                             exoPlayer.repeatMode = repeatMode
                             touchInteraction()
                         }) {
-                            Text(if (repeatMode == Player.REPEAT_MODE_OFF) "↻ Repeat" else if (repeatMode == Player.REPEAT_MODE_ONE) "↻ 1" else "↻ All", color = Color.White)
+                            Text(if (repeatMode == Player.REPEAT_MODE_OFF) "⟲" else if (repeatMode == Player.REPEAT_MODE_ONE) "↻¹" else "↻", color = Color.White, style = MaterialTheme.typography.titleLarge)
                         }
-                        TextButton(onClick = { fullscreen = !fullscreen; touchInteraction() }) {
-                            Text(if (fullscreen) "⛶ Full" else "⤢ Full", color = Color.White)
+                        TextButton(onClick = {
+                                fullscreen = !fullscreen
+                                val controller = WindowCompat.getInsetsController(window, window.decorView)
+                                if (fullscreen) controller.hide(WindowInsetsCompat.Type.systemBars()) else controller.show(WindowInsetsCompat.Type.systemBars())
+                                touchInteraction()
+                            }) {
+                            Text(if (fullscreen) "⛶" else "⤢", color = Color.White, style = MaterialTheme.typography.titleLarge)
                         }
                     }
                 }
@@ -459,7 +466,7 @@ fun PlayerScreen(
                 Column(
                     Modifier.fillMaxWidth()
                         .background(Color.Black.copy(alpha = 0.48f), RoundedCornerShape(18.dp))
-                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                        .padding(horizontal = 10.dp, vertical = 4.dp),
                     verticalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
                     if (errorMessage != null) {
@@ -468,9 +475,9 @@ fun PlayerScreen(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(formatDuration(positionMs), color = Color.White, style = MaterialTheme.typography.labelSmall)
                         Slider(
-                            modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+                            modifier = Modifier.weight(1f).padding(horizontal = 8.dp).height(14.dp),
                             value = if (isSeeking) seekValue else positionMs.toFloat(),
-                            onValueChange = { seekValue = it; isSeeking = true; touchInteraction() },
+                            onValueChange = { seekValue = it; isSeeking = true; exoPlayer.seekTo(it.toLong()); touchInteraction() },
                             onValueChangeFinished = { exoPlayer.seekTo(seekValue.toLong()); isSeeking = false; touchInteraction() },
                             valueRange = 0f..durationMs.coerceAtLeast(1L).toFloat()
                         )
@@ -481,8 +488,7 @@ fun PlayerScreen(
                         horizontalArrangement = Arrangement.Center,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        PlayerAction("⏮", "Previous", settings.iconSize) { navigatePrevious() }
-                        Spacer(Modifier.weight(1f))
+                        
                         Surface(
                             onClick = {
                                 if (exoPlayer.isPlaying) exoPlayer.pause() else exoPlayer.play()
@@ -490,30 +496,15 @@ fun PlayerScreen(
                             },
                             shape = RoundedCornerShape(50),
                             color = Color.White.copy(alpha = 0.16f),
-                            modifier = Modifier.size(58.dp)
+                            modifier = Modifier.size(42.dp)
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 Text(if (isPlaying) "Ⅱ" else "▶", color = Color.White, style = MaterialTheme.typography.headlineMedium)
                             }
                         }
-                        Spacer(Modifier.weight(1f))
-                        PlayerAction("⏭", "Next", settings.iconSize) { navigateNext() }
+
                     }
-                    Box(Modifier.fillMaxWidth()) {
-                        Text(
-                            " ",
-                            modifier = Modifier.align(Alignment.Center)
-                        )
-                        TextButton(
-                            modifier = Modifier.align(Alignment.CenterEnd),
-                            onClick = {
-                                if (Build.VERSION.SDK_INT >= 26) {
-                                    runCatching { activity.enterPictureInPictureMode(PictureInPictureParams.Builder().setAspectRatio(Rational(16, 9)).build()) }
-                                        .onFailure { overlayMessage = "Picture-in-picture unavailable" }
-                                } else overlayMessage = "Picture-in-picture requires Android 8.0+"
-                            }
-                        ) { Text("▣ PiP", color = Color.White) }
-                    }
+
                 }
             }
 
