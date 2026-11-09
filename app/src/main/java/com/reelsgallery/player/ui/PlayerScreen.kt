@@ -89,6 +89,9 @@ import kotlin.math.roundToInt
 fun PlayerScreen(
     queue: List<LocalMedia>,
     startIndex: Int,
+    mixedQueue: List<LocalMedia> = queue,
+    mixedStartIndex: Int = startIndex,
+    onNavigateToMedia: (LocalMedia, Int) -> Unit = { _, _ -> },
     settings: SettingsStore,
     activity: androidx.activity.ComponentActivity,
     onClose: () -> Unit
@@ -327,6 +330,7 @@ fun PlayerScreen(
                     var navigated = false
                     var horizontalHandled = false
                     var verticalHandled = false
+                    var targetMixedIndex = -1
                     var wasPlayingBeforeGesture = exoPlayer.isPlaying
                     val seekStart = exoPlayer.currentPosition
                     while (true) {
@@ -372,14 +376,19 @@ fun PlayerScreen(
                                         if (!verticalHandled) {
                                             wasPlayingBeforeGesture = exoPlayer.isPlaying
                                             exoPlayer.pause()
-                                            val currentIndex = exoPlayer.currentMediaItemIndex
-                                            val targetIndex = if (dy < 0f) currentIndex + 1 else currentIndex - 1
-                                            if (targetIndex in safeQueue.indices) {
-                                                previewIndex = targetIndex
-                                                previewDirection = if (dy < 0f) 1 else -1
-                                                previewPlayer.setMediaItem(MediaItem.fromUri(safeQueue[targetIndex].uri))
-                                                previewPlayer.prepare()
-                                                previewPlayer.pause()
+                                            val currentUri = exoPlayer.currentMediaItem?.localConfiguration?.uri
+                                            val currentMixed = mixedQueue.indexOfFirst { it.uri == currentUri }.takeIf { it >= 0 } ?: mixedStartIndex
+                                            targetMixedIndex = currentMixed + if (dy < 0f) 1 else -1
+                                            val targetMedia = mixedQueue.getOrNull(targetMixedIndex)
+                                            if (targetMedia?.isVideo == true) {
+                                                val targetVideoIndex = safeQueue.indexOfFirst { it.uri == targetMedia.uri }
+                                                if (targetVideoIndex >= 0) {
+                                                    previewIndex = targetVideoIndex
+                                                    previewDirection = if (dy < 0f) 1 else -1
+                                                    previewPlayer.setMediaItem(MediaItem.fromUri(targetMedia.uri))
+                                                    previewPlayer.prepare()
+                                                    previewPlayer.pause()
+                                                }
                                             }
                                         }
                                         verticalHandled = true
@@ -407,9 +416,17 @@ fun PlayerScreen(
                                         kotlinx.coroutines.delay(16)
                                     }
                                     if (commitSwipe) {
-                                        exoPlayer.seekTo(targetIndex, 0L)
-                                        exoPlayer.playWhenReady = true
-                                        overlayMessage = if (distance < 0f) "Next video" else "Previous video"
+                                        val targetMedia = mixedQueue[mixedTarget]
+                                        if (targetMedia.isVideo) {
+                                            val targetVideoIndex = safeQueue.indexOfFirst { it.uri == targetMedia.uri }
+                                            if (targetVideoIndex >= 0) {
+                                                exoPlayer.seekTo(targetVideoIndex, 0L)
+                                                exoPlayer.playWhenReady = true
+                                            }
+                                        } else {
+                                            onNavigateToMedia(targetMedia, mixedTarget)
+                                        }
+                                        overlayMessage = if (distance < 0f) "Next media" else "Previous media"
                                     } else exoPlayer.playWhenReady = wasPlayingBeforeGesture
                                     previewIndex = -1
                                     previewDirection = 0

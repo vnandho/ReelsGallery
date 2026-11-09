@@ -113,6 +113,9 @@ fun ReelsGalleryApp(activity: androidx.activity.ComponentActivity) {
                     PlayerScreen(
                         queue = queue.filter { it.isVideo },
                         startIndex = queue.filter { it.isVideo }.indexOfFirst { it.uri == item.uri }.coerceAtLeast(0),
+                        mixedQueue = queue,
+                        mixedStartIndex = queueStart,
+                        onNavigateToMedia = { next, index -> queueStart = index; selectedMedia = next },
                         settings = settings,
                         activity = activity,
                         onClose = { selectedMedia = null }
