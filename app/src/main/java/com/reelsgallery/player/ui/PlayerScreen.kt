@@ -2,6 +2,9 @@ package com.reelsgallery.player.ui
 
 import android.content.Context
 import android.media.AudioManager
+import android.app.PictureInPictureParams
+import android.os.Build
+import android.util.Rational
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -86,6 +89,8 @@ fun PlayerScreen(
     val urisKey = remember(safeQueue) { safeQueue.joinToString("|") { it.uri.toString() } }
     val exoPlayer = remember(urisKey) { ExoPlayer.Builder(context).build() }
     var isPlaying by remember { mutableStateOf(true) }
+    var muted by remember { mutableStateOf(false) }
+    var lastCenterTap by remember { mutableLongStateOf(0L) }
     var controlsVisible by remember { mutableStateOf(true) }
     var repeatMode by remember { mutableIntStateOf(Player.REPEAT_MODE_OFF) }
     var positionMs by remember { mutableLongStateOf(0L) }
@@ -280,6 +285,7 @@ fun PlayerScreen(
                     val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
                     var moved = false
                     var navigated = false
+                    var horizontalHandled = false
                     while (true) {
                         val event = awaitPointerEvent()
                         val change = event.changes.firstOrNull { it.id == down.id } ?: break
@@ -287,6 +293,14 @@ fun PlayerScreen(
                         val dy = change.position.y - start.y
                         val isVertical = abs(dy) > viewConfiguration.touchSlop && abs(dy) > abs(dx) * 1.3f
                         if (abs(dx) > viewConfiguration.touchSlop || abs(dy) > viewConfiguration.touchSlop) moved = true
+                        if (change.pressed && zone == GestureZone.CENTER && !isVertical && abs(dx) > viewConfiguration.touchSlop && abs(dx) > abs(dy) * 1.3f && !horizontalHandled) {
+                            val delta = (dx / size.width.toFloat() * (durationMs.coerceAtLeast(1L) * 0.5f)).toLong()
+                            exoPlayer.seekTo((exoPlayer.currentPosition + delta).coerceIn(0L, durationMs.coerceAtLeast(1L)))
+                            overlayMessage = formatDuration(exoPlayer.currentPosition)
+                            horizontalHandled = true
+                            touchInteraction()
+                            change.consume()
+                        }
                         if (change.pressed && isVertical) {
                             when (zone) {
                                 GestureZone.LEFT -> if (settings.brightnessGesture) {
@@ -317,7 +331,18 @@ fun PlayerScreen(
                             }
                         }
                         if (!change.pressed) {
-                            if (!moved) { controlsVisible = !controlsVisible; interactionId++ }
+                            if (!moved) {
+                                val now = android.os.SystemClock.elapsedRealtime()
+                                if (zone == GestureZone.CENTER && now - lastCenterTap < 320L) {
+                                    if (exoPlayer.isPlaying) exoPlayer.pause() else exoPlayer.play()
+                                    overlayMessage = if (exoPlayer.isPlaying) "Playing" else "Paused"
+                                    lastCenterTap = 0L
+                                } else {
+                                    lastCenterTap = now
+                                    controlsVisible = true
+                                    interactionId++
+                                }
+                            }
                             break
                         }
                     }
@@ -391,6 +416,12 @@ fun PlayerScreen(
                         Text(formatDuration(durationMs), color = Color.White, style = MaterialTheme.typography.labelSmall)
                     }
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        TextButton(onClick = { muted = !muted; exoPlayer.volume = if (muted) 0f else 1f; touchInteraction() }) { Text(if (muted) "Muted" else "Sound", color = Color.White) }
+                        TextButton(onClick = {
+                            if (Build.VERSION.SDK_INT >= 26) {
+                                runCatching { activity.enterPictureInPictureMode(PictureInPictureParams.Builder().setAspectRatio(Rational(16, 9)).build()) }
+                            } else overlayMessage = "Picture-in-picture requires Android 8.0+"
+                        }) { Text("PiP", color = Color.White) }
                         TextButton(onClick = { repeatMode = when (repeatMode) { Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ONE; Player.REPEAT_MODE_ONE -> Player.REPEAT_MODE_ALL; else -> Player.REPEAT_MODE_OFF }; exoPlayer.repeatMode = repeatMode; touchInteraction() }) {
                             Text(when (repeatMode) { Player.REPEAT_MODE_ONE -> "↻1"; Player.REPEAT_MODE_ALL -> "↻ All"; else -> "↻ Off" }, color = Color.White)
                         }
