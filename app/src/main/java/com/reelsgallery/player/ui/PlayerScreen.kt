@@ -510,8 +510,8 @@ fun PlayerScreen(
                         TextButton(onClick = { muted = !muted; settings.playerMuted = muted; exoPlayer.volume = if (muted) 0f else 1f; touchInteraction() }, modifier = Modifier.size(42.dp)) {
                             Text(if (muted) "🔇" else "🔊", color = Color.White, style = MaterialTheme.typography.titleLarge)
                         }
-                        TextButton(onClick = { rotation = (rotation + 90) % 360; touchInteraction() }) {
-                            Text("↻", color = Color.White, style = MaterialTheme.typography.titleLarge)
+                        TextButton(onClick = { landscape = !landscape; activity.requestedOrientation = if (landscape) ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT; touchInteraction() }) {
+                            Text(if (landscape) "▣" else "▭", color = Color.White, style = MaterialTheme.typography.titleLarge)
                         }
                         TextButton(onClick = {
                             repeatMode = when (repeatMode) {
