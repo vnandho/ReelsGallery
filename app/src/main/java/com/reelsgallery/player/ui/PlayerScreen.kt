@@ -2,6 +2,7 @@ package com.reelsgallery.player.ui
 
 import android.content.Context
 import android.content.pm.ActivityInfo
+import android.content.pm.ActivityInfo
 import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever
 import android.content.ContentValues
@@ -123,6 +124,7 @@ fun PlayerScreen(
     var isSeeking by remember { mutableStateOf(false) }
     var landscape by remember { mutableStateOf(false) }
     var speed by remember { mutableFloatStateOf(1f) }
+    var landscape by remember { mutableStateOf(false) }
     var resizeMode by remember { mutableIntStateOf(AspectRatioFrameLayout.RESIZE_MODE_FIT) }
     var fullscreen by remember { mutableStateOf(false) }
     var interactionId by remember { mutableIntStateOf(0) }
