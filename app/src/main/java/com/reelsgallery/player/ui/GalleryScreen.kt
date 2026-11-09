@@ -85,7 +85,7 @@ fun GalleryScreen(media:List<LocalMedia>,settings:SettingsStore,refreshToken:Int
    else LazyVerticalGrid(GridCells.Fixed(columns),Modifier.fillMaxSize().navigationBarsPadding(),contentPadding=PaddingValues(12.dp),horizontalArrangement=Arrangement.spacedBy(9.dp),verticalArrangement=Arrangement.spacedBy(10.dp)){
     items(entries,key={when(it){is GalleryEntry.Folder->"folder:"+it.folder.path;is GalleryEntry.File->"file:"+it.media.uri}}){entry->when(entry){
      is GalleryEntry.Folder->Card(Modifier.fillMaxWidth().clickable{path=entry.folder.path},shape=RoundedCornerShape(14.dp)){Column(Modifier.padding(14.dp)){Text("📁",style=MaterialTheme.typography.headlineMedium);Text(entry.folder.name,maxLines=2,overflow=TextOverflow.Ellipsis,style=MaterialTheme.typography.labelLarge);Text("Folder",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}}
-     is GalleryEntry.File->{val item=entry.media;val q=if(settings.queueScope=="ALL")visible.filter{it.isVideo}else visible.filter{it.isVideo&&it.relativePath==item.relativePath};MediaTile(item){onOpenMedia(item,q.ifEmpty{listOf(item)})}}
+     is GalleryEntry.File->{val item=entry.media;val q=when(filter){GalleryFilter.ALL->visible;GalleryFilter.VIDEOS->visible.filter{it.isVideo};GalleryFilter.PHOTOS->visible.filter{!it.isVideo}};MediaTile(item){onOpenMedia(item,q.ifEmpty{listOf(item)})}}
     }}
    }
   }

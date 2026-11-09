@@ -438,7 +438,8 @@ fun PlayerScreen(
                                     lastCenterTap = 0L
                                 } else {
                                     lastCenterTap = now
-                                    { controlsVisible = !controlsVisible; interactionId++ }
+                                    controlsVisible = !controlsVisible
+                                    interactionId++
                                 }
                             }
                             break
