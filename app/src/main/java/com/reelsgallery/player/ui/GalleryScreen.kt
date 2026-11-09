@@ -34,13 +34,14 @@ private sealed interface GalleryEntry { data class Folder(val folder:FolderEntry
 @Composable
 fun GalleryScreen(media:List<LocalMedia>,settings:SettingsStore,refreshToken:Int,onRefresh:()->Unit,onOpenSettings:()->Unit,onOpenMedia:(LocalMedia,List<LocalMedia>)->Unit) {
  var filter by remember { mutableStateOf(GalleryFilter.ALL) }; var sort by remember { mutableStateOf(MediaSort.NEWEST) }
- var search by remember { mutableStateOf("") }; var volume by remember { mutableStateOf<String?>(null) }
+ var search by remember { mutableStateOf("") }; var groupByType by remember { mutableStateOf(false) }; var volume by remember { mutableStateOf<String?>(null) }
  var path by remember { mutableStateOf("") }; var sortMenu by remember { mutableStateOf(false) }; var refreshing by remember { mutableStateOf(false) }
  val columns=remember(refreshToken){settings.gridColumns}
  val scoped=remember(media,volume){media.filter{volume==null||it.volumeName==volume}}
  val visible=remember(scoped,filter,sort,search){ 
   val f=scoped.filter{(filter==GalleryFilter.ALL||(filter==GalleryFilter.VIDEOS&&it.isVideo)||(filter==GalleryFilter.PHOTOS&&!it.isVideo))&&(search.isBlank()||it.displayName.contains(search.trim(),true))}
-  when(sort){MediaSort.NEWEST->f.sortedByDescending{it.dateAddedSeconds};MediaSort.OLDEST->f.sortedBy{it.dateAddedSeconds};MediaSort.NAME->f.sortedBy{it.displayName.lowercase()};MediaSort.SIZE->f.sortedByDescending{it.sizeBytes};MediaSort.DURATION->f.sortedByDescending{it.durationMs}}
+  val ordered=when(sort){MediaSort.NEWEST->f.sortedByDescending{it.dateAddedSeconds};MediaSort.OLDEST->f.sortedBy{it.dateAddedSeconds};MediaSort.NAME->f.sortedBy{it.displayName.lowercase()};MediaSort.SIZE->f.sortedByDescending{it.sizeBytes};MediaSort.DURATION->f.sortedByDescending{it.durationMs}}
+  if(filter==GalleryFilter.ALL&&groupByType) ordered.sortedBy { if(it.isVideo) 0 else 1 } else ordered
  }
  val roots=remember(visible){MediaRepository.storageRoots(visible)}
  val folders=remember(visible,path){
@@ -68,7 +69,7 @@ fun GalleryScreen(media:List<LocalMedia>,settings:SettingsStore,refreshToken:Int
     Spacer(Modifier.weight(1f))
     Box{TextButton(onClick={sortMenu=true}){Text("Sort by ▾")};DropdownMenu(expanded=sortMenu,onDismissRequest={sortMenu=false}){MediaSort.entries.filter{filter!=GalleryFilter.PHOTOS||it!=MediaSort.DURATION}.forEach{m->DropdownMenuItem(text={Text(m.label())},onClick={sort=m;sortMenu=false})}}}
    }
-   OutlinedTextField(search,{search=it},Modifier.fillMaxWidth(),singleLine=true,placeholder={Text("Search media")},shape=RoundedCornerShape(14.dp))
+   OutlinedTextField(value=search,onValueChange={search=it},modifier=Modifier.fillMaxWidth(),singleLine=true,placeholder={Text("Search media")},shape=RoundedCornerShape(14.dp),trailingIcon={if(search.isNotEmpty())IconButton(onClick={search=""}){Text("✕")}})
   }
  }){padding->
   val swipe=Modifier.pointerInput(filter){var dx=0f;detectHorizontalDragGestures(onHorizontalDrag={_,d->dx+=d},onDragEnd={if(dx < -65f)filter=when(filter){GalleryFilter.ALL->GalleryFilter.VIDEOS;GalleryFilter.VIDEOS->GalleryFilter.PHOTOS;GalleryFilter.PHOTOS->GalleryFilter.PHOTOS};if(dx>65f)filter=when(filter){GalleryFilter.ALL->GalleryFilter.ALL;GalleryFilter.VIDEOS->GalleryFilter.ALL;GalleryFilter.PHOTOS->GalleryFilter.VIDEOS};dx=0f},onDragCancel={dx=0f})}
@@ -100,8 +101,13 @@ fun GalleryScreen(media:List<LocalMedia>,settings:SettingsStore,refreshToken:Int
  }
 }
 @Composable private fun EmptyGallery(title:String,description:String){Column(Modifier.fillMaxSize().padding(24.dp),verticalArrangement=Arrangement.Center,horizontalAlignment=Alignment.CenterHorizontally){Text(title,style=MaterialTheme.typography.titleLarge);Spacer(Modifier.height(8.dp));Text(description,color=MaterialTheme.colorScheme.onSurfaceVariant)}}
-@Composable fun PhotoViewer(item:LocalMedia,onClose:()->Unit){
- BackHandler(onBack=onClose);Box(Modifier.fillMaxSize().background(Color.Black)){AndroidView(modifier=Modifier.fillMaxSize(),factory={c->ImageView(c).apply{scaleType=ImageView.ScaleType.FIT_CENTER;setImageURI(item.uri)}},update={if(it.tag!=item.uri){it.setImageURI(item.uri);it.tag=item.uri}});TextButton(onClick=onClose,modifier=Modifier.align(Alignment.TopStart).statusBarsPadding().padding(12.dp)){Text("‹ Back",color=Color.White)}}
+@Composable fun PhotoViewer(item:LocalMedia,queue:List<LocalMedia>,startIndex:Int,onClose:()->Unit,onNavigate:(LocalMedia,Int)->Unit){
+ var index by remember(item.uri,startIndex){mutableIntStateOf(startIndex.coerceIn(0,queue.lastIndex.coerceAtLeast(0)))}
+ val current=queue.getOrNull(index)?:item
+ BackHandler(onBack=onClose)
+ Box(Modifier.fillMaxSize().background(Color.Black).pointerInput(index,queue){var total=0f;androidx.compose.foundation.gestures.detectVerticalDragGestures(onVerticalDrag={change,amount->total+=amount;change.consume()},onDragEnd={if(kotlin.math.abs(total)>70f){val next=(index+if(total<0f)1 else -1).coerceIn(0,queue.lastIndex);if(next!=index){index=next;onNavigate(queue[next],next)}};total=0f},onDragCancel={total=0f})}){
+  AndroidView(modifier=Modifier.fillMaxSize(),factory={c->ImageView(c).apply{scaleType=ImageView.ScaleType.FIT_CENTER;setImageURI(current.uri)}},update={if(it.tag!=current.uri){it.setImageURI(current.uri);it.tag=current.uri}})
+ }
 }
 private fun MediaSort.label()=when(this){MediaSort.NEWEST->"Newest";MediaSort.OLDEST->"Oldest";MediaSort.NAME->"Name";MediaSort.SIZE->"File size";MediaSort.DURATION->"Duration"}
 fun formatDuration(ms:Long):String{val t=(ms/1000).coerceAtLeast(0);val h=t/3600;val m=(t%3600)/60;val s=t%60;return if(h>0)"%d:%02d:%02d".format(h,m,s) else "%d:%02d".format(m,s)}
