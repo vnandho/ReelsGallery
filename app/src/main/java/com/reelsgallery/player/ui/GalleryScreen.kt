@@ -6,7 +6,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -106,7 +106,7 @@ fun GalleryScreen(media:List<LocalMedia>,settings:SettingsStore,refreshToken:Int
  var index by remember(item.uri,startIndex){mutableIntStateOf(startIndex.coerceIn(0,queue.lastIndex.coerceAtLeast(0)))}
  val current=queue.getOrNull(index)?:item
  BackHandler(onBack=onClose)
- Box(Modifier.fillMaxSize().background(Color.Black).pointerInput(index,queue){var total=0f;androidx.compose.foundation.gestures.detectVerticalDragGestures(onVerticalDrag={change,amount->total+=amount;change.consume()},onDragEnd={if(kotlin.math.abs(total)>70f){val next=(index+if(total<0f)1 else -1).coerceIn(0,queue.lastIndex);if(next!=index){index=next;onNavigate(queue[next],next)}};total=0f},onDragCancel={total=0f})}){
+ Box(Modifier.fillMaxSize().background(Color.Black).pointerInput(index,queue){var total=0f;detectDragGestures(onDrag={change,amount->total+=amount.y;change.consume()},onDragEnd={if(kotlin.math.abs(total)>70f){val next=(index+if(total<0f)1 else -1).coerceIn(0,queue.lastIndex);if(next!=index){index=next;onNavigate(queue[next],next)}};total=0f},onDragCancel={total=0f})}){
   AndroidView(modifier=Modifier.fillMaxSize(),factory={c->ImageView(c).apply{scaleType=ImageView.ScaleType.FIT_CENTER;setImageURI(current.uri)}},update={if(it.tag!=current.uri){it.setImageURI(current.uri);it.tag=current.uri}})
  }
 }
