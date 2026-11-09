@@ -101,7 +101,7 @@ fun GalleryScreen(media:List<LocalMedia>,settings:SettingsStore,refreshToken:Int
 }
 @Composable private fun EmptyGallery(title:String,description:String){Column(Modifier.fillMaxSize().padding(24.dp),verticalArrangement=Arrangement.Center,horizontalAlignment=Alignment.CenterHorizontally){Text(title,style=MaterialTheme.typography.titleLarge);Spacer(Modifier.height(8.dp));Text(description,color=MaterialTheme.colorScheme.onSurfaceVariant)}}
 @Composable fun PhotoViewer(item:LocalMedia,onClose:()->Unit){
- BackHandler(onBack=onClose);Box(Modifier.fillMaxSize().background(Color.Black)){AndroidView(Modifier.fillMaxSize(),factory={c->ImageView(c).apply{scaleType=ImageView.ScaleType.FIT_CENTER;setImageURI(item.uri)}},update={if(it.tag!=item.uri){it.setImageURI(item.uri);it.tag=item.uri}});TextButton(onClick=onClose,modifier=Modifier.align(Alignment.TopStart).statusBarsPadding().padding(12.dp)){Text("‹ Back",color=Color.White)}}
+ BackHandler(onBack=onClose);Box(Modifier.fillMaxSize().background(Color.Black)){AndroidView(modifier=Modifier.fillMaxSize(),factory={c->ImageView(c).apply{scaleType=ImageView.ScaleType.FIT_CENTER;setImageURI(item.uri)}},update={if(it.tag!=item.uri){it.setImageURI(item.uri);it.tag=item.uri}});TextButton(onClick=onClose,modifier=Modifier.align(Alignment.TopStart).statusBarsPadding().padding(12.dp)){Text("‹ Back",color=Color.White)}}
 }
 private fun MediaSort.label()=when(this){MediaSort.NEWEST->"Newest";MediaSort.OLDEST->"Oldest";MediaSort.NAME->"Name";MediaSort.SIZE->"File size";MediaSort.DURATION->"Duration"}
 fun formatDuration(ms:Long):String{val t=(ms/1000).coerceAtLeast(0);val h=t/3600;val m=(t%3600)/60;val s=t%60;return if(h>0)"%d:%02d:%02d".format(h,m,s) else "%d:%02d".format(m,s)}
