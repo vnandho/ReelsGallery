@@ -114,7 +114,7 @@ fun PlayerScreen(
     var rotation by remember { mutableIntStateOf(0) }
     var speed by remember { mutableFloatStateOf(1f) }
     var resizeMode by remember { mutableIntStateOf(AspectRatioFrameLayout.RESIZE_MODE_FIT) }
-    var fullscreen by remember { mutableStateOf(true) }
+    var fullscreen by remember { mutableStateOf(false) }
     var interactionId by remember { mutableIntStateOf(0) }
     var overlayMessage by remember { mutableStateOf<String?>(null) }
     var brightnessIndicator by remember { mutableStateOf<String?>(null) }
