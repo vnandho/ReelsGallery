@@ -113,7 +113,8 @@ fun PlayerScreen(
     var controlsVisible by remember { mutableStateOf(true) }
     var repeatMode by remember { mutableIntStateOf(settings.repeatMode) }
     var pendingSeekMs by remember { mutableLongStateOf(0L) }
-    val verticalOffset = remember { Animatable(0f) }
+    val scope = rememberCoroutineScope()
+    var verticalDragOffset by remember { mutableFloatStateOf(0f) }
     var adjacentPreview by remember { mutableStateOf<Bitmap?>(null) }
     var positionMs by remember { mutableLongStateOf(0L) }
     var durationMs by remember { mutableLongStateOf(0L) }
@@ -280,7 +281,7 @@ fun PlayerScreen(
                 contentDescription = "Adjacent video preview",
                 contentScale = androidx.compose.ui.layout.ContentScale.Fit,
                 modifier = Modifier.fillMaxSize().graphicsLayer {
-                    translationY = pageHeight.toPx() * (if (verticalOffset.value <= 0f) 1f else -1f) + verticalOffset.value
+                    translationY = pageHeight.toPx() * (if (verticalDragOffset <= 0f) 1f else -1f) + verticalOffset.value
                 }
             )
         }
@@ -363,7 +364,7 @@ fun PlayerScreen(
                                     val action = PlayerGestureClassifier.classifySwipe(dx, dy, viewConfiguration.touchSlop)
                                     if (action != SwipeAction.NONE && abs(dy) > viewConfiguration.touchSlop) {
                                         verticalHandled = true
-                                        verticalOffset.snapTo(dy.coerceIn(-size.height.toFloat(), size.height.toFloat()))
+                                        verticalDragOffset = dy.coerceIn(-size.height.toFloat(), size.height.toFloat())
                                         change.consume()
                                     }
                                 }
@@ -372,14 +373,17 @@ fun PlayerScreen(
                         if (!change.pressed) {
                             if (horizontalHandled) exoPlayer.seekTo(pendingSeekMs.coerceIn(0L, durationMs.coerceAtLeast(1L)))
                             if (verticalHandled) {
-                                val distance = verticalOffset.value
+                                val distance = verticalDragOffset
                                 if (abs(distance) > size.height * 0.18f) {
-                                    verticalOffset.animateTo(if (distance < 0f) -size.height.toFloat() else size.height.toFloat(), tween(170))
-                                    if (distance < 0f) navigateNext() else navigatePrevious()
+                                    scope.launch {
+                                        verticalDragOffset = if (distance < 0f) -size.height.toFloat() else size.height.toFloat()
+                                        kotlinx.coroutines.delay(170)
+                                        if (distance < 0f) navigateNext() else navigatePrevious()
+                                        verticalDragOffset = 0f
+                                    }
                                 } else {
-                                    verticalOffset.animateTo(0f, tween(180))
+                                    scope.launch { verticalDragOffset = 0f }
                                 }
-                                verticalOffset.snapTo(0f)
                             }
                             if (!moved) {
                                 val now = android.os.SystemClock.elapsedRealtime()
