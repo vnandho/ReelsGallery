@@ -1,0 +1,94 @@
+name: Android debug build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android 16 stable SDK packages
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Verify Gradle
+        run: ./gradlew --version
+
+      - name: Run unit tests, lint and build APK
+        run: ./gradlew clean testDebugUnitTest lintDebug assembleDebug
+
+      - name: Verify APK signature, metadata and offline permission
+        run: |
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          BT="$ANDROID_HOME/build-tools/36.0.0"
+          test -s "$APK"
+          "$BT/apksigner" verify --verbose "$APK"
+          "$BT/aapt" dump badging "$APK" | grep "package: name='com.reelsgallery.player'"
+          "$BT/aapt" dump permissions "$APK" > /tmp/reels-gallery-permissions.txt
+          if grep -q 'android.permission.INTERNET' /tmp/reels-gallery-permissions.txt; then
+            echo 'Unexpected INTERNET permission found in APK' >&2
+            cat /tmp/reels-gallery-permissions.txt >&2
+            exit 1
+          fi
+
+      - name: Prepare deliverables
+        run: |
+          mkdir -p dist
+          cp app/build/outputs/apk/debug/app-debug.apk dist/ReelsGallery-v1.0.0-android14plus-debug.apk
+          cp README.md PRIVACY.md PROJECT_ARCHITECTURE.md CHANGELOG.md dist/
+          cat > dist/BUILD_REPORT.md <<'REPORT'
+          # Reels Gallery — CI Build Report
+
+          Build environment: GitHub Actions, Ubuntu runner, Temurin JDK 21, Android API 36 / Build Tools 36.0.0.
+
+          Gradle tasks completed successfully: `clean`, `testDebugUnitTest`, `lintDebug`, `assembleDebug`. APK signature verification, package ID check, and no-INTERNET-permission audit also passed in the preceding step.
+
+          Output: `ReelsGallery-v1.0.0-android14plus-debug.apk` (debug-signed). Device installation and real-device playback testing are not performed by this workflow.
+          REPORT
+          (cd dist && sha256sum ReelsGallery-v1.0.0-android14plus-debug.apk > SHA256SUMS.txt)
+          git archive --format=zip --output=dist/ReelsGallery-source.zip HEAD
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ReelsGallery-debug-apk
+          path: dist/ReelsGallery-v1.0.0-android14plus-debug.apk
+          if-no-files-found: error
+
+      - name: Upload source and report
+        uses: actions/upload-artifact@v4
+        with:
+          name: ReelsGallery-source-and-report
+          path: |
+            dist/ReelsGallery-source.zip
+            dist/BUILD_REPORT.md
+            dist/README.md
+            dist/PRIVACY.md
+            dist/PROJECT_ARCHITECTURE.md
+            dist/CHANGELOG.md
+          if-no-files-found: error
+
+      - name: Upload checksums
+        uses: actions/upload-artifact@v4
+        with:
+          name: ReelsGallery-checksums
+          path: dist/SHA256SUMS.txt
+          if-no-files-found: error

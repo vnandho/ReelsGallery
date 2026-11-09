@@ -1,0 +1,15 @@
+package com.reelsgallery.player
+
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.core.view.WindowCompat
+import com.reelsgallery.player.ui.ReelsGalleryApp
+
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        setContent { ReelsGalleryApp(activity = this) }
+    }
+}

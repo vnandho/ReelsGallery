@@ -1,0 +1,453 @@
+package com.reelsgallery.player.ui
+
+import android.content.Context
+import android.media.AudioManager
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.consume
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
+import androidx.media3.common.C
+import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.AspectRatioFrameLayout
+import androidx.media3.ui.PlayerView
+import androidx.media3.ui.TrackSelectionDialogBuilder
+import com.reelsgallery.player.data.LocalMedia
+import com.reelsgallery.player.data.SettingsStore
+import com.reelsgallery.player.player.GestureZone
+import com.reelsgallery.player.player.PlayerGestureClassifier
+import com.reelsgallery.player.player.SwipeAction
+import kotlinx.coroutines.delay
+import kotlin.math.abs
+import kotlin.math.roundToInt
+
+@OptIn(UnstableApi::class)
+@Composable
+fun PlayerScreen(
+    queue: List<LocalMedia>,
+    startIndex: Int,
+    settings: SettingsStore,
+    activity: androidx.activity.ComponentActivity,
+    onClose: () -> Unit
+) {
+    val context = LocalContext.current
+    val window = activity.window
+    val safeQueue = remember(queue) { queue.ifEmpty { emptyList() } }
+    if (safeQueue.isEmpty()) {
+        Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
+            TextButton(onClick = onClose) { Text("Close player") }
+        }
+        return
+    }
+
+    val urisKey = remember(safeQueue) { safeQueue.joinToString("|") { it.uri.toString() } }
+    val exoPlayer = remember(urisKey) { ExoPlayer.Builder(context).build() }
+    var isPlaying by remember { mutableStateOf(true) }
+    var controlsVisible by remember { mutableStateOf(true) }
+    var repeatMode by remember { mutableIntStateOf(Player.REPEAT_MODE_OFF) }
+    var positionMs by remember { mutableLongStateOf(0L) }
+    var durationMs by remember { mutableLongStateOf(0L) }
+    var seekValue by remember { mutableFloatStateOf(0f) }
+    var isSeeking by remember { mutableStateOf(false) }
+    var rotation by remember { mutableIntStateOf(0) }
+    var speed by remember { mutableFloatStateOf(1f) }
+    var resizeMode by remember { mutableIntStateOf(AspectRatioFrameLayout.RESIZE_MODE_FIT) }
+    var fullscreen by remember { mutableStateOf(true) }
+    var interactionId by remember { mutableIntStateOf(0) }
+    var overlayMessage by remember { mutableStateOf<String?>(null) }
+    var brightnessIndicator by remember { mutableStateOf<String?>(null) }
+    var speedMenu by remember { mutableStateOf(false) }
+    var aspectMenu by remember { mutableStateOf(false) }
+    var moreMenu by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+    val audioManager = remember(context) { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
+    val originalScreenBrightness = remember(window) { window.attributes.screenBrightness }
+
+    BackHandler(onBack = onClose)
+
+    DisposableEffect(window) {
+        val controller = WindowCompat.getInsetsController(window, window.decorView)
+        controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        controller.hide(WindowInsetsCompat.Type.systemBars())
+        onDispose {
+            controller.show(WindowInsetsCompat.Type.systemBars())
+            val attrs = window.attributes
+            attrs.screenBrightness = originalScreenBrightness
+            window.attributes = attrs
+        }
+    }
+
+    DisposableEffect(fullscreen, window) {
+        val controller = WindowCompat.getInsetsController(window, window.decorView)
+        if (fullscreen) controller.hide(WindowInsetsCompat.Type.systemBars())
+        else controller.show(WindowInsetsCompat.Type.systemBars())
+        controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        onDispose { }
+    }
+
+    DisposableEffect(exoPlayer, urisKey) {
+        val mediaItems = safeQueue.map { Local -> MediaItem.fromUri(Local.uri) }
+        val safeIndex = startIndex.coerceIn(0, mediaItems.lastIndex)
+        val resumeAt = settings.position(safeQueue[safeIndex].uri.toString())
+        exoPlayer.setMediaItems(mediaItems, safeIndex, resumeAt)
+        exoPlayer.repeatMode = repeatMode
+        exoPlayer.prepare()
+        exoPlayer.playWhenReady = true
+
+        val listener = object : Player.Listener {
+            override fun onIsPlayingChanged(playing: Boolean) { isPlaying = playing }
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                durationMs = exoPlayer.duration.takeIf { it > 0L } ?: 0L
+                if (playbackState == Player.STATE_READY) errorMessage = null
+            }
+            override fun onPlayerError(error: PlaybackException) {
+                errorMessage = "Can't play this file: ${error.errorCodeName}"
+            }
+        }
+        exoPlayer.addListener(listener)
+        onDispose {
+            val index = exoPlayer.currentMediaItemIndex.coerceIn(0, safeQueue.lastIndex)
+            settings.savePosition(safeQueue[index].uri.toString(), exoPlayer.currentPosition)
+            exoPlayer.removeListener(listener)
+            exoPlayer.release()
+        }
+    }
+
+    LaunchedEffect(exoPlayer, isSeeking) {
+        var lastSavedIndex = -1
+        var lastSavedPosition = 0L
+        while (true) {
+            if (!isSeeking) {
+                val currentIndex = exoPlayer.currentMediaItemIndex
+                positionMs = exoPlayer.currentPosition.coerceAtLeast(0L)
+                durationMs = exoPlayer.duration.takeIf { it > 0L } ?: 0L
+                seekValue = positionMs.toFloat()
+                if (currentIndex in safeQueue.indices &&
+                    (currentIndex != lastSavedIndex || kotlin.math.abs(positionMs - lastSavedPosition) >= 2000L)
+                ) {
+                    settings.savePosition(safeQueue[currentIndex].uri.toString(), positionMs)
+                    lastSavedIndex = currentIndex
+                    lastSavedPosition = positionMs
+                }
+            }
+            delay(350)
+        }
+    }
+
+    LaunchedEffect(controlsVisible, interactionId, isSeeking, settings.autoHideSeconds) {
+        if (controlsVisible && !isSeeking && settings.autoHideSeconds > 0) {
+            delay(settings.autoHideSeconds * 1000L)
+            controlsVisible = false
+        }
+    }
+
+    LaunchedEffect(overlayMessage) {
+        if (overlayMessage != null) {
+            delay(1200)
+            overlayMessage = null
+        }
+    }
+
+    LaunchedEffect(brightnessIndicator) {
+        if (brightnessIndicator != null) {
+            delay(900)
+            brightnessIndicator = null
+        }
+    }
+
+    val subtitlePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            runCatching { context.contentResolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+            val index = exoPlayer.currentMediaItemIndex.coerceIn(0, safeQueue.lastIndex)
+            val currentPosition = exoPlayer.currentPosition
+            val items = safeQueue.mapIndexed { itemIndex, media ->
+                val builder = MediaItem.Builder().setUri(media.uri)
+                if (itemIndex == index) {
+                    val name = runCatching {
+                        context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
+                            if (it.moveToFirst()) it.getString(0).orEmpty() else ""
+                        }.orEmpty()
+                    }.getOrDefault("")
+                    val mime = if (name.endsWith(".ass", true) || name.endsWith(".ssa", true)) "text/x-ssa" else MimeTypes.APPLICATION_SUBRIP
+                    val config = MediaItem.SubtitleConfiguration.Builder(uri)
+                        .setMimeType(mime)
+                        .setLabel(name.ifBlank { "External subtitle" })
+                        .setSelectionFlags(C.SELECTION_FLAG_DEFAULT)
+                        .build()
+                    builder.setSubtitleConfigurations(listOf(config))
+                }
+                builder.build()
+            }
+            exoPlayer.setMediaItems(items, index, currentPosition)
+            exoPlayer.prepare()
+            exoPlayer.playWhenReady = true
+            overlayMessage = "External subtitle added"
+        }
+    }
+
+    fun touchInteraction() {
+        controlsVisible = true
+        interactionId++
+    }
+    fun navigateNext() {
+        if (exoPlayer.hasNextMediaItem()) { exoPlayer.seekToNextMediaItem(); exoPlayer.playWhenReady = true; overlayMessage = "Next video" }
+        else overlayMessage = "End of queue"
+        touchInteraction()
+    }
+    fun navigatePrevious() {
+        if (exoPlayer.hasPreviousMediaItem()) { exoPlayer.seekToPreviousMediaItem(); exoPlayer.playWhenReady = true; overlayMessage = "Previous video" }
+        else overlayMessage = "Start of queue"
+        touchInteraction()
+    }
+
+    Box(Modifier.fillMaxSize().background(Color.Black)) {
+        AndroidView(
+            modifier = Modifier.fillMaxSize().graphicsLayer { rotationZ = rotation.toFloat() },
+            factory = { ctx ->
+                PlayerView(ctx).apply {
+                    useController = false
+                    controllerAutoShow = false
+                    this.resizeMode = resizeMode
+                    setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
+                    keepScreenOn = true
+                    this.player = exoPlayer
+                }
+            },
+            update = { view ->
+                view.player = exoPlayer
+                view.resizeMode = resizeMode
+                view.rotation = 0f
+            }
+        )
+
+        Box(
+            Modifier.fillMaxSize().pointerInput(
+                urisKey,
+                settings.sideZonePercent,
+                settings.brightnessGesture,
+                settings.volumeGesture,
+                settings.reverseGestures
+            ) {
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = true)
+                    val start = down.position
+                    val zone = PlayerGestureClassifier.zoneOf(start.x, size.width.toFloat(), settings.sideZonePercent / 100f)
+                    val startBrightness = window.attributes.screenBrightness.let { if (it < 0f) 0.5f else it }
+                    val startVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+                    val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
+                    var moved = false
+                    var navigated = false
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                        val dx = change.position.x - start.x
+                        val dy = change.position.y - start.y
+                        val isVertical = abs(dy) > viewConfiguration.touchSlop && abs(dy) > abs(dx) * 1.3f
+                        if (abs(dx) > viewConfiguration.touchSlop || abs(dy) > viewConfiguration.touchSlop) moved = true
+                        if (change.pressed && isVertical) {
+                            when (zone) {
+                                GestureZone.LEFT -> if (settings.brightnessGesture) {
+                                    val adjustment = if (settings.reverseGestures) dy else -dy
+                                    val value = (startBrightness + adjustment / size.height.toFloat() * 1.25f).coerceIn(0.02f, 1f)
+                                    val attrs = window.attributes
+                                    attrs.screenBrightness = value
+                                    window.attributes = attrs
+                                    brightnessIndicator = "☼  ${(value * 100).roundToInt()}%"
+                                    change.consume()
+                                }
+                                GestureZone.RIGHT -> if (settings.volumeGesture) {
+                                    val travel = if (settings.reverseGestures) dy else -dy
+                                    val delta = (travel / size.height.toFloat() * maxVolume * 1.5f).roundToInt()
+                                    val value = (startVolume + delta).coerceIn(0, maxVolume)
+                                    audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, value, 0)
+                                    brightnessIndicator = "◖  ${(value * 100 / maxVolume)}%"
+                                    change.consume()
+                                }
+                                GestureZone.CENTER -> {
+                                    val action = PlayerGestureClassifier.classifySwipe(dx, dy, viewConfiguration.touchSlop)
+                                    if (!navigated && abs(dy) > size.height * 0.12f && action != SwipeAction.NONE) {
+                                        navigated = true
+                                        if (action == SwipeAction.NEXT) navigateNext() else navigatePrevious()
+                                        change.consume()
+                                    }
+                                }
+                            }
+                        }
+                        if (!change.pressed) {
+                            if (!moved) { controlsVisible = !controlsVisible; interactionId++ }
+                            break
+                        }
+                    }
+                }
+            }
+        )
+
+        if (controlsVisible) {
+            Column(
+                Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.28f)).padding(horizontal = 14.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(onClick = onClose) { Text("‹  Back", color = Color.White) }
+                    Column(Modifier.weight(1f)) {
+                        Text(safeQueue.getOrNull(exoPlayer.currentMediaItemIndex)?.displayName ?: "Video", color = Color.White, maxLines = 1)
+                        Text("${exoPlayer.currentMediaItemIndex + 1} / ${safeQueue.size}", color = Color.LightGray, style = MaterialTheme.typography.labelSmall)
+                    }
+                    Box {
+                        TextButton(onClick = { moreMenu = true }) { Text("⋮", color = Color.White, style = MaterialTheme.typography.titleLarge) }
+                        DropdownMenu(expanded = moreMenu, onDismissRequest = { moreMenu = false }) {
+                            DropdownMenuItem(text = { Text("Audio track") }, onClick = {
+                                moreMenu = false
+                                runCatching { TrackSelectionDialogBuilder(context, "Audio track", exoPlayer, C.TRACK_TYPE_AUDIO).build().show() }
+                                    .onFailure { overlayMessage = "Audio track selection unavailable" }
+                            })
+                            DropdownMenuItem(text = { Text("Embedded subtitles") }, onClick = {
+                                moreMenu = false
+                                runCatching { TrackSelectionDialogBuilder(context, "Subtitles", exoPlayer, C.TRACK_TYPE_TEXT).build().show() }
+                                    .onFailure { overlayMessage = "Subtitle selection unavailable" }
+                            })
+                            DropdownMenuItem(text = { Text("Open external subtitle") }, onClick = {
+                                moreMenu = false
+                                subtitlePicker.launch(arrayOf("application/x-subrip", "text/x-ssa", "text/plain", "application/octet-stream"))
+                            })
+                            DropdownMenuItem(text = { Text("Playback speed") }, onClick = { moreMenu = false; speedMenu = true })
+                            DropdownMenuItem(text = { Text("Aspect ratio") }, onClick = { moreMenu = false; aspectMenu = true })
+                        }
+                    }
+                }
+
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                    PlayerAction("|◀", "Previous video", settings.iconSize) { navigatePrevious() }
+                    PlayerAction("↶", "Back ${settings.jumpSeconds}s", settings.iconSize) {
+                        exoPlayer.seekTo((exoPlayer.currentPosition - settings.jumpSeconds * 1000L).coerceAtLeast(0L)); touchInteraction()
+                    }
+                    PlayerAction(if (isPlaying) "Ⅱ" else "▶", if (isPlaying) "Pause" else "Play", settings.iconSize + 8) {
+                        if (exoPlayer.isPlaying) exoPlayer.pause() else exoPlayer.play()
+                        touchInteraction()
+                    }
+                    PlayerAction("↷", "Forward ${settings.jumpSeconds}s", settings.iconSize) {
+                        val end = exoPlayer.duration.takeIf { it > 0 } ?: Long.MAX_VALUE
+                        exoPlayer.seekTo((exoPlayer.currentPosition + settings.jumpSeconds * 1000L).coerceAtMost(end)); touchInteraction()
+                    }
+                    PlayerAction("▶|", "Next video", settings.iconSize) { navigateNext() }
+                }
+
+                Column(Modifier.fillMaxWidth()) {
+                    if (errorMessage != null) {
+                        Text(errorMessage!!, color = Color(0xFFFF8A80), modifier = Modifier.padding(bottom = 8.dp))
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(formatDuration(positionMs), color = Color.White, style = MaterialTheme.typography.labelSmall)
+                        Slider(
+                            modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+                            value = if (isSeeking) seekValue else positionMs.toFloat(),
+                            onValueChange = { seekValue = it; isSeeking = true; touchInteraction() },
+                            onValueChangeFinished = { exoPlayer.seekTo(seekValue.toLong()); isSeeking = false; touchInteraction() },
+                            valueRange = 0f..(durationMs.coerceAtLeast(1L).toFloat())
+                        )
+                        Text(formatDuration(durationMs), color = Color.White, style = MaterialTheme.typography.labelSmall)
+                    }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        TextButton(onClick = { repeatMode = when (repeatMode) { Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ONE; Player.REPEAT_MODE_ONE -> Player.REPEAT_MODE_ALL; else -> Player.REPEAT_MODE_OFF }; exoPlayer.repeatMode = repeatMode; touchInteraction() }) {
+                            Text(when (repeatMode) { Player.REPEAT_MODE_ONE -> "↻1"; Player.REPEAT_MODE_ALL -> "↻ All"; else -> "↻ Off" }, color = Color.White)
+                        }
+                        TextButton(onClick = { rotation = (rotation + 90) % 360; touchInteraction() }) { Text("⤾ ${rotation}°", color = Color.White) }
+                        Box {
+                            TextButton(onClick = { speedMenu = true }) { Text("${speed}×", color = Color.White) }
+                            DropdownMenu(expanded = speedMenu, onDismissRequest = { speedMenu = false }) {
+                                listOf(0.25f, 0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f, 3f, 4f).forEach { value ->
+                                    DropdownMenuItem(text = { Text("${value}×") }, onClick = { speed = value; exoPlayer.setPlaybackSpeed(value); speedMenu = false; touchInteraction() })
+                                }
+                            }
+                        }
+                        Box {
+                            TextButton(onClick = { aspectMenu = true }) { Text("▣", color = Color.White) }
+                            DropdownMenu(expanded = aspectMenu, onDismissRequest = { aspectMenu = false }) {
+                                listOf(
+                                    "Fit" to AspectRatioFrameLayout.RESIZE_MODE_FIT,
+                                    "Fill / crop" to AspectRatioFrameLayout.RESIZE_MODE_ZOOM,
+                                    "Stretch" to AspectRatioFrameLayout.RESIZE_MODE_FILL,
+                                    "Fixed width" to AspectRatioFrameLayout.RESIZE_MODE_FIXED_WIDTH
+                                ).forEach { (label, mode) ->
+                                    DropdownMenuItem(text = { Text(label) }, onClick = { resizeMode = mode; aspectMenu = false; touchInteraction() })
+                                }
+                            }
+                        }
+                        TextButton(onClick = { fullscreen = !fullscreen; touchInteraction() }) { Text(if (fullscreen) "⛶" else "⤢", color = Color.White) }
+                    }
+                }
+            }
+        }
+
+        if (brightnessIndicator != null) {
+            Surface(
+                modifier = Modifier.align(Alignment.Center),
+                color = Color.Black.copy(alpha = 0.72f),
+                shape = MaterialTheme.shapes.large
+            ) {
+                Text(brightnessIndicator!!, modifier = Modifier.padding(horizontal = 22.dp, vertical = 15.dp), color = Color.White)
+            }
+        }
+        if (overlayMessage != null) {
+            Surface(
+                modifier = Modifier.align(Alignment.TopCenter).padding(top = 76.dp),
+                color = Color.Black.copy(alpha = 0.76f),
+                shape = MaterialTheme.shapes.medium
+            ) { Text(overlayMessage!!, modifier = Modifier.padding(horizontal = 16.dp, vertical = 9.dp), color = Color.White) }
+        }
+    }
+}
+
+@Composable
+private fun PlayerAction(glyph: String, label: String, iconSize: Int, onClick: () -> Unit) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(horizontal = 2.dp)) {
+        TextButton(onClick = onClick, modifier = Modifier.size((iconSize + 25).dp)) {
+            Text(glyph, color = Color.White, style = MaterialTheme.typography.headlineSmall)
+        }
+        Text(label, color = Color.LightGray, style = MaterialTheme.typography.labelSmall)
+    }
+}
