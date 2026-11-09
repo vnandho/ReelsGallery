@@ -50,7 +50,7 @@ fun ReelsGalleryApp(activity: androidx.activity.ComponentActivity) {
         var queue by remember { mutableStateOf(emptyList<LocalMedia>()) }
         var queueStart by remember { mutableIntStateOf(0) }
         var splashVisible by remember { mutableStateOf(true) }
-        LaunchedEffect(Unit) { kotlinx.coroutines.delay(500); splashVisible = false }
+        LaunchedEffect(Unit) { kotlinx.coroutines.delay(1500); splashVisible = false }
 
         val permissionLauncher = rememberLauncherForActivityResult(
             ActivityResultContracts.RequestMultiplePermissions()
@@ -129,7 +129,7 @@ fun ReelsGalleryApp(activity: androidx.activity.ComponentActivity) {
             androidx.compose.material3.Surface(Modifier.fillMaxSize(), color=Color(0xFF090A0F)) {
                 androidx.compose.foundation.layout.Column(Modifier.fillMaxSize(), verticalArrangement=androidx.compose.foundation.layout.Arrangement.Center, horizontalAlignment=androidx.compose.ui.Alignment.CenterHorizontally) {
                     androidx.compose.material3.Text("Made with passion", color=Color.White, style=MaterialTheme.typography.titleLarge)
-                    androidx.compose.material3.Text("by @vnandho", color=Color.LightGray, style=MaterialTheme.typography.bodyMedium)
+                    androidx.compose.material3.Text(text = androidx.compose.ui.text.buildAnnotatedString { append("by "); pushStyle(androidx.compose.ui.text.SpanStyle(fontWeight = androidx.compose.ui.text.font.FontWeight.ExtraBold, color = Color.White)); append("@vnandho"); pop() }, color = Color.LightGray, style = MaterialTheme.typography.bodyMedium)
                 }
             }
         }
