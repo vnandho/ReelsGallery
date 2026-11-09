@@ -2,8 +2,6 @@ package com.reelsgallery.player.ui
 
 import android.content.Context
 import android.content.ContentValues
-import android.graphics.Bitmap
-import android.media.MediaMetadataRetriever
 import android.provider.MediaStore
 import android.media.AudioManager
 import android.app.PictureInPictureParams
@@ -12,8 +10,6 @@ import android.util.Rational
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.Image
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
@@ -115,7 +111,6 @@ fun PlayerScreen(
     var pendingSeekMs by remember { mutableLongStateOf(0L) }
     val scope = rememberCoroutineScope()
     var verticalDragOffset by remember { mutableFloatStateOf(0f) }
-    var adjacentPreview by remember { mutableStateOf<Bitmap?>(null) }
     var positionMs by remember { mutableLongStateOf(0L) }
     var durationMs by remember { mutableLongStateOf(0L) }
     var seekValue by remember { mutableFloatStateOf(0f) }
@@ -133,14 +128,6 @@ fun PlayerScreen(
     var errorMessage by remember { mutableStateOf<String?>(null) }
     val audioManager = remember(context) { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
     val originalScreenBrightness = remember(window) { window.attributes.screenBrightness }
-
-    LaunchedEffect(exoPlayer.currentMediaItemIndex, urisKey) {
-        adjacentPreview = withContext(Dispatchers.IO) {
-            val index = exoPlayer.currentMediaItemIndex
-            val next = safeQueue.getOrNull(index + 1) ?: safeQueue.getOrNull(index - 1)
-            next?.let { extractPreviewFrame(context, it.uri) }
-        }
-    }
 
     BackHandler(onBack = onClose)
 
@@ -275,16 +262,6 @@ fun PlayerScreen(
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         val pageHeight = androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp.dp
-        if (adjacentPreview != null) {
-            Image(
-                bitmap = adjacentPreview!!.asImageBitmap(),
-                contentDescription = "Adjacent video preview",
-                contentScale = androidx.compose.ui.layout.ContentScale.Fit,
-                modifier = Modifier.fillMaxSize().graphicsLayer {
-                    translationY = pageHeight.toPx() * (if (verticalDragOffset <= 0f) 1f else -1f) + verticalDragOffset
-                }
-            )
-        }
         AndroidView(
             modifier = Modifier.fillMaxSize().graphicsLayer { translationY = verticalDragOffset },
             factory = { ctx ->
@@ -596,14 +573,6 @@ fun PlayerScreen(
             ) { Text(overlayMessage!!, modifier = Modifier.padding(horizontal = 16.dp, vertical = 9.dp), color = Color.White) }
         }
     }
-}
-
-private fun extractPreviewFrame(context: Context, uri: android.net.Uri): Bitmap? {
-    val retriever = MediaMetadataRetriever()
-    return try {
-        retriever.setDataSource(context, uri)
-        retriever.getFrameAtTime(0L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
-    } catch (_: Exception) { null } finally { runCatching { retriever.release() } }
 }
 
 private fun captureVideoScreenshot(context: Context, uri: android.net.Uri, positionMs: Long): Boolean {
