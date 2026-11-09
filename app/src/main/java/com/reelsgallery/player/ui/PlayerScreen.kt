@@ -12,6 +12,11 @@ import android.util.Rational
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -108,6 +113,8 @@ fun PlayerScreen(
     var controlsVisible by remember { mutableStateOf(true) }
     var repeatMode by remember { mutableIntStateOf(settings.repeatMode) }
     var pendingSeekMs by remember { mutableLongStateOf(0L) }
+    val verticalOffset = remember { Animatable(0f) }
+    var adjacentPreview by remember { mutableStateOf<Bitmap?>(null) }
     var positionMs by remember { mutableLongStateOf(0L) }
     var durationMs by remember { mutableLongStateOf(0L) }
     var seekValue by remember { mutableFloatStateOf(0f) }
@@ -125,6 +132,14 @@ fun PlayerScreen(
     var errorMessage by remember { mutableStateOf<String?>(null) }
     val audioManager = remember(context) { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
     val originalScreenBrightness = remember(window) { window.attributes.screenBrightness }
+
+    LaunchedEffect(exoPlayer.currentMediaItemIndex, urisKey) {
+        adjacentPreview = withContext(Dispatchers.IO) {
+            val index = exoPlayer.currentMediaItemIndex
+            val next = safeQueue.getOrNull(index + 1) ?: safeQueue.getOrNull(index - 1)
+            next?.let { extractPreviewFrame(context, it.uri) }
+        }
+    }
 
     BackHandler(onBack = onClose)
 
@@ -258,8 +273,19 @@ fun PlayerScreen(
     }
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
+        val pageHeight = androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp.dp
+        if (adjacentPreview != null) {
+            Image(
+                bitmap = adjacentPreview!!.asImageBitmap(),
+                contentDescription = "Adjacent video preview",
+                contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+                modifier = Modifier.fillMaxSize().graphicsLayer {
+                    translationY = pageHeight.toPx() * (if (verticalOffset.value <= 0f) 1f else -1f) + verticalOffset.value
+                }
+            )
+        }
         AndroidView(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().graphicsLayer { translationY = verticalOffset.value },
             factory = { ctx ->
                 PlayerView(ctx).apply {
                     useController = false
@@ -295,6 +321,7 @@ fun PlayerScreen(
                     var moved = false
                     var navigated = false
                     var horizontalHandled = false
+                var verticalHandled = false
                     val seekStart = exoPlayer.currentPosition
                     while (true) {
                         val event = awaitPointerEvent()
@@ -334,9 +361,9 @@ fun PlayerScreen(
                                 }
                                 GestureZone.CENTER -> {
                                     val action = PlayerGestureClassifier.classifySwipe(dx, dy, viewConfiguration.touchSlop)
-                                    if (!navigated && abs(dy) > size.height * 0.12f && action != SwipeAction.NONE) {
-                                        navigated = true
-                                        if (action == SwipeAction.NEXT) navigateNext() else navigatePrevious()
+                                    if (action != SwipeAction.NONE && abs(dy) > viewConfiguration.touchSlop) {
+                                        verticalHandled = true
+                                        verticalOffset.snapTo(dy.coerceIn(-size.height.toFloat(), size.height.toFloat()))
                                         change.consume()
                                     }
                                 }
@@ -344,6 +371,16 @@ fun PlayerScreen(
                         }
                         if (!change.pressed) {
                             if (horizontalHandled) exoPlayer.seekTo(pendingSeekMs.coerceIn(0L, durationMs.coerceAtLeast(1L)))
+                            if (verticalHandled) {
+                                val distance = verticalOffset.value
+                                if (abs(distance) > size.height * 0.18f) {
+                                    verticalOffset.animateTo(if (distance < 0f) -size.height.toFloat() else size.height.toFloat(), tween(170))
+                                    if (distance < 0f) navigateNext() else navigatePrevious()
+                                } else {
+                                    verticalOffset.animateTo(0f, tween(180))
+                                }
+                                verticalOffset.snapTo(0f)
+                            }
                             if (!moved) {
                                 val now = android.os.SystemClock.elapsedRealtime()
                                 if (now - lastCenterTap < 320L) {
@@ -555,6 +592,14 @@ fun PlayerScreen(
             ) { Text(overlayMessage!!, modifier = Modifier.padding(horizontal = 16.dp, vertical = 9.dp), color = Color.White) }
         }
     }
+}
+
+private fun extractPreviewFrame(context: Context, uri: android.net.Uri): Bitmap? {
+    val retriever = MediaMetadataRetriever()
+    return try {
+        retriever.setDataSource(context, uri)
+        retriever.getFrameAtTime(0L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+    } catch (_: Exception) { null } finally { runCatching { retriever.release() } }
 }
 
 private fun captureVideoScreenshot(context: Context, uri: android.net.Uri, positionMs: Long): Boolean {
