@@ -435,7 +435,7 @@ fun PlayerScreen(
                                     lastCenterTap = 0L
                                 } else {
                                     lastCenterTap = now
-                                    if (zone == GestureZone.CENTER) { controlsVisible = !controlsVisible; interactionId++ }
+                                    { controlsVisible = !controlsVisible; interactionId++ }
                                 }
                             }
                             break

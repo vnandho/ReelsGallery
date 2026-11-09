@@ -1,268 +1,107 @@
 package com.reelsgallery.player.ui
-
 import android.graphics.Bitmap
 import android.widget.ImageView
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import com.reelsgallery.player.data.GalleryFilter
-import com.reelsgallery.player.data.LocalMedia
-import com.reelsgallery.player.data.MediaRepository
-import com.reelsgallery.player.data.MediaSort
-import com.reelsgallery.player.data.SettingsStore
+import com.reelsgallery.player.data.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-
+private data class FolderEntry(val path:String,val name:String)
+private sealed interface GalleryEntry { data class Folder(val folder:FolderEntry):GalleryEntry; data class File(val media:LocalMedia):GalleryEntry }
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun GalleryScreen(
-    media: List<LocalMedia>,
-    settings: SettingsStore,
-    refreshToken: Int,
-    onRefresh: () -> Unit,
-    onOpenSettings: () -> Unit,
-    onOpenMedia: (LocalMedia, List<LocalMedia>) -> Unit
-) {
-    var filter by remember { mutableStateOf(GalleryFilter.ALL) }
-    var sort by remember { mutableStateOf(MediaSort.NEWEST) }
-    var search by remember { mutableStateOf("") }
-    var selectedFolder by remember { mutableStateOf<String?>(null) }
-    var folderMenu by remember { mutableStateOf(false) }
-    var sortMenu by remember { mutableStateOf(false) }
-    val currentGridColumns = remember(refreshToken) { settings.gridColumns }
-
-    val folders = remember(media) { media.map { it.relativePath }.distinct().sorted() }
-    val orderedVideos = remember(media, sort) {
-        val videos = media.filter { it.isVideo }
-        when (sort) {
-            MediaSort.NEWEST -> videos.sortedByDescending { it.dateAddedSeconds }
-            MediaSort.OLDEST -> videos.sortedBy { it.dateAddedSeconds }
-            MediaSort.NAME -> videos.sortedBy { it.displayName.lowercase() }
-            MediaSort.SIZE -> videos.sortedByDescending { it.sizeBytes }
-            MediaSort.DURATION -> videos.sortedByDescending { it.durationMs }
-        }
+fun GalleryScreen(media:List<LocalMedia>,settings:SettingsStore,refreshToken:Int,onRefresh:()->Unit,onOpenSettings:()->Unit,onOpenMedia:(LocalMedia,List<LocalMedia>)->Unit) {
+ var filter by remember { mutableStateOf(GalleryFilter.ALL) }; var sort by remember { mutableStateOf(MediaSort.NEWEST) }
+ var search by remember { mutableStateOf("") }; var volume by remember { mutableStateOf<String?>(null) }
+ var path by remember { mutableStateOf("") }; var sortMenu by remember { mutableStateOf(false) }; var refreshing by remember { mutableStateOf(false) }
+ val columns=remember(refreshToken){settings.gridColumns}
+ val scoped=remember(media,volume){media.filter{volume==null||it.volumeName==volume}}
+ val visible=remember(scoped,filter,sort,search){ 
+  val f=scoped.filter{(filter==GalleryFilter.ALL||(filter==GalleryFilter.VIDEOS&&it.isVideo)||(filter==GalleryFilter.PHOTOS&&!it.isVideo))&&(search.isBlank()||it.displayName.contains(search.trim(),true))}
+  when(sort){MediaSort.NEWEST->f.sortedByDescending{it.dateAddedSeconds};MediaSort.OLDEST->f.sortedBy{it.dateAddedSeconds};MediaSort.NAME->f.sortedBy{it.displayName.lowercase()};MediaSort.SIZE->f.sortedByDescending{it.sizeBytes};MediaSort.DURATION->f.sortedByDescending{it.durationMs}}
+ }
+ val roots=remember(visible){MediaRepository.storageRoots(visible)}
+ val folders=remember(visible,path){
+  visible.mapNotNull { item ->
+   val p=item.relativePath.trimStart('/')
+   if(!p.startsWith(path)) null else { val rest=p.removePrefix(path); val child=rest.substringBefore('/')
+    if(rest.contains('/')&&child.isNotBlank()) FolderEntry(path+child.trimEnd('/')+"/",child) else null
+   }
+  }.distinctBy{it.path}.sortedBy{it.name.lowercase()}
+ }
+ val directFiles=remember(visible,path){visible.filter{it.relativePath.trimStart('/')==path}}
+ val entries=remember(folders,directFiles){folders.map{GalleryEntry.Folder(it)}+directFiles.map{GalleryEntry.File(it)}}
+ fun back(){ if(path.isNotEmpty()) path=path.trimEnd('/').substringBeforeLast('/',"").let{if(it.isEmpty())"" else "$it/"} else volume=null }
+ BackHandler(enabled=volume!=null){back()}
+ Scaffold(containerColor=MaterialTheme.colorScheme.background,topBar={
+  Column(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal=16.dp,vertical=8.dp)){
+   Row(verticalAlignment=Alignment.CenterVertically){
+    if(volume!=null) TextButton(onClick={back()}){Text("‹ Back")} else Column(Modifier.weight(1f)){Text("REELS GALLERY",style=MaterialTheme.typography.titleLarge);Text("Local media library",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}
+    if(volume!=null) Column(Modifier.weight(1f)){Text(if(path.isBlank()) roots.firstOrNull{it.volumeName==volume}?.label?:"Storage" else path.trimEnd('/').substringAfterLast('/'),maxLines=1,overflow=TextOverflow.Ellipsis);Text("\${visible.size} media files",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}
+    IconButton(onClick={refreshing=true;onRefresh()}){Text("↻",style=MaterialTheme.typography.headlineSmall)}
+    IconButton(onClick=onOpenSettings){Text("⚙",style=MaterialTheme.typography.titleLarge)}
+   }
+   Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(5.dp)){
+    listOf(GalleryFilter.ALL,GalleryFilter.VIDEOS,GalleryFilter.PHOTOS).forEach{f->val label=when(f){GalleryFilter.ALL->"All";GalleryFilter.VIDEOS->"Videos";GalleryFilter.PHOTOS->"Images"};FilterChip(selected=filter==f,onClick={filter=f},label={Text(label)})}
+    Spacer(Modifier.weight(1f))
+    Box{TextButton(onClick={sortMenu=true}){Text("Sort by ▾")};DropdownMenu(expanded=sortMenu,onDismissRequest={sortMenu=false}){MediaSort.entries.filter{filter!=GalleryFilter.PHOTOS||it!=MediaSort.DURATION}.forEach{m->DropdownMenuItem(text={Text(m.label())},onClick={sort=m;sortMenu=false})}}}
+   }
+   OutlinedTextField(search,{search=it},Modifier.fillMaxWidth(),singleLine=true,placeholder={Text("Search media")},shape=RoundedCornerShape(14.dp))
+  }
+ }){padding->
+  val swipe=Modifier.pointerInput(filter){var dx=0f;detectHorizontalDragGestures(onHorizontalDrag={_,d->dx+=d},onDragEnd={if(dx < -65f)filter=when(filter){GalleryFilter.ALL->GalleryFilter.VIDEOS;GalleryFilter.VIDEOS->GalleryFilter.PHOTOS;GalleryFilter.PHOTOS->GalleryFilter.PHOTOS};if(dx>65f)filter=when(filter){GalleryFilter.ALL->GalleryFilter.ALL;GalleryFilter.VIDEOS->GalleryFilter.ALL;GalleryFilter.PHOTOS->GalleryFilter.VIDEOS};dx=0f},onDragCancel={dx=0f})}
+  PullToRefreshBox(isRefreshing=refreshing,onRefresh={refreshing=true;onRefresh()},modifier=Modifier.fillMaxSize().padding(padding).then(swipe)){
+   LaunchedEffect(refreshToken){refreshing=false}
+   if(volume==null){
+    if(roots.isEmpty()) EmptyGallery("No media storage found","Allow photo and video access, then refresh.")
+    else LazyVerticalGrid(GridCells.Fixed(2),Modifier.fillMaxSize().navigationBarsPadding(),contentPadding=PaddingValues(14.dp),horizontalArrangement=Arrangement.spacedBy(12.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
+     items(roots,key={it.volumeName}){r->Card(Modifier.fillMaxWidth().clickable{volume=r.volumeName;path=""},shape=RoundedCornerShape(18.dp)){Column(Modifier.padding(18.dp)){Text(if(r.isRemovable)"▣" else "▤",style=MaterialTheme.typography.displaySmall);Text(r.label,style=MaterialTheme.typography.titleMedium);Text("\${r.itemCount} media files",color=MaterialTheme.colorScheme.onSurfaceVariant)}}}
     }
-    val visible = remember(media, filter, sort, search, selectedFolder) {
-        val filtered = media.filter { item ->
-            (filter == GalleryFilter.ALL || (filter == GalleryFilter.VIDEOS && item.isVideo) || (filter == GalleryFilter.PHOTOS && !item.isVideo)) &&
-                (selectedFolder == null || item.relativePath == selectedFolder) &&
-                (search.isBlank() || item.displayName.contains(search.trim(), ignoreCase = true))
-        }
-        when (sort) {
-            MediaSort.NEWEST -> filtered.sortedByDescending { it.dateAddedSeconds }
-            MediaSort.OLDEST -> filtered.sortedBy { it.dateAddedSeconds }
-            MediaSort.NAME -> filtered.sortedBy { it.displayName.lowercase() }
-            MediaSort.SIZE -> filtered.sortedByDescending { it.sizeBytes }
-            MediaSort.DURATION -> filtered.sortedByDescending { it.durationMs }
-        }
-    }
-
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
-        topBar = {
-            Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 10.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("REELS GALLERY", style = MaterialTheme.typography.titleLarge)
-                        Text("Your local media library", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelMedium)
-                    }
-                    IconButton(onClick = onRefresh) { Text("↻", style = MaterialTheme.typography.headlineSmall) }
-                    IconButton(onClick = onOpenSettings) { Text("⚙", style = MaterialTheme.typography.titleLarge) }
-                }
-                Spacer(Modifier.height(12.dp))
-                OutlinedTextField(
-                    value = search,
-                    onValueChange = { search = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    placeholder = { Text("Search file name") },
-                    leadingIcon = { Text("⌕") },
-                    shape = RoundedCornerShape(15.dp)
-                )
-                Spacer(Modifier.height(9.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    GalleryFilter.entries.forEach { option ->
-                        FilterChip(
-                            selected = filter == option,
-                            onClick = { filter = option },
-                            label = { Text(option.label()) }
-                        )
-                    }
-                    Spacer(Modifier.weight(1f))
-                    Box {
-                        TextButton(onClick = { folderMenu = true }) { Text(if (selectedFolder == null) "Folders ▾" else selectedFolder!!.trimEnd('/').substringAfterLast('/') + " ▾") }
-                        DropdownMenu(expanded = folderMenu, onDismissRequest = { folderMenu = false }) {
-                            DropdownMenuItem(text = { Text("All folders") }, onClick = { selectedFolder = null; folderMenu = false })
-                            folders.forEach { path ->
-                                val label = path.trimEnd('/').substringAfterLast('/').ifBlank { "Other" }
-                                val count = media.count { it.relativePath == path }
-                                DropdownMenuItem(
-                                    text = { Text("$label  ·  $count") },
-                                    onClick = { selectedFolder = path; folderMenu = false }
-                                )
-                            }
-                        }
-                    }
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("${visible.size} items", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelMedium)
-                    Spacer(Modifier.weight(1f))
-                    Box {
-                        TextButton(onClick = { sortMenu = true }) { Text("Sort: ${sort.label()} ▾") }
-                        DropdownMenu(expanded = sortMenu, onDismissRequest = { sortMenu = false }) {
-                            MediaSort.entries.forEach { option ->
-                                DropdownMenuItem(text = { Text(option.label()) }, onClick = { sort = option; sortMenu = false })
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    ) { padding ->
-        if (visible.isEmpty()) {
-            Column(
-                modifier = Modifier.fillMaxSize().padding(padding).padding(24.dp),
-                verticalArrangement = Arrangement.Center,
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(if (media.isEmpty()) "No media found" else "Nothing matches your search", style = MaterialTheme.typography.titleLarge)
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    if (media.isEmpty()) "Add photos or videos to your device, then refresh the gallery." else "Try another filter or folder.",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(Modifier.height(14.dp))
-                Button(onClick = onRefresh) { Text("Refresh gallery") }
-            }
-        } else {
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(currentGridColumns),
-                modifier = Modifier.fillMaxSize().padding(padding),
-                contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 24.dp),
-                horizontalArrangement = Arrangement.spacedBy(9.dp),
-                verticalArrangement = Arrangement.spacedBy(9.dp)
-            ) {
-                items(visible, key = { "${it.uri}" }) { item ->
-                    val queueForItem = if (settings.queueScope == "ALL") orderedVideos else orderedVideos.filter { it.relativePath == item.relativePath }
-                    MediaTile(item = item, onClick = { onOpenMedia(item, queueForItem) })
-                }
-            }
-        }
-    }
+   }else if(entries.isEmpty()) EmptyGallery("No matching media here","Try another filter or open a different folder.")
+   else LazyVerticalGrid(GridCells.Fixed(columns),Modifier.fillMaxSize().navigationBarsPadding(),contentPadding=PaddingValues(12.dp),horizontalArrangement=Arrangement.spacedBy(9.dp),verticalArrangement=Arrangement.spacedBy(10.dp)){
+    items(entries,key={when(it){is GalleryEntry.Folder->"folder:"+it.folder.path;is GalleryEntry.File->"file:"+it.media.uri}}){entry->when(entry){
+     is GalleryEntry.Folder->Card(Modifier.fillMaxWidth().clickable{path=entry.folder.path},shape=RoundedCornerShape(14.dp)){Column(Modifier.padding(14.dp)){Text("📁",style=MaterialTheme.typography.headlineMedium);Text(entry.folder.name,maxLines=2,overflow=TextOverflow.Ellipsis,style=MaterialTheme.typography.labelLarge);Text("Folder",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}}
+     is GalleryEntry.File->{val item=entry.media;val q=if(settings.queueScope=="ALL")visible.filter{it.isVideo}else visible.filter{it.isVideo&&it.relativePath==item.relativePath};MediaTile(item){onOpenMedia(item,q.ifEmpty{listOf(item)})}}
+    }}
+   }
+  }
+ }
 }
-
-@Composable
-private fun MediaTile(item: LocalMedia, onClick: () -> Unit) {
-    val context = LocalContext.current
-    val bitmap: Bitmap? by produceState(initialValue = null, item.uri) {
-        value = withContext(Dispatchers.IO) { MediaRepository.thumbnail(context, item.uri) }
-    }
-    Column(Modifier.fillMaxWidth().clickable(onClick = onClick)) {
-        Box(
-            Modifier.fillMaxWidth().aspectRatio(0.78f).clip(RoundedCornerShape(13.dp)).background(MaterialTheme.colorScheme.surfaceVariant)
-        ) {
-            if (bitmap != null) {
-                Image(bitmap!!.asImageBitmap(), contentDescription = item.displayName, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-            } else {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text(if (item.isVideo) "▶" else "▧", style = MaterialTheme.typography.headlineLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-            if (item.isVideo) {
-                Surface(
-                    modifier = Modifier.align(Alignment.BottomEnd).padding(6.dp),
-                    color = androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.78f),
-                    shape = RoundedCornerShape(6.dp)
-                ) {
-                    Text(formatDuration(item.durationMs), modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp), style = MaterialTheme.typography.labelSmall, color = androidx.compose.ui.graphics.Color.White)
-                }
-                Text("▶", modifier = Modifier.align(Alignment.TopStart).padding(7.dp), color = androidx.compose.ui.graphics.Color.White)
-            }
-        }
-        Spacer(Modifier.height(5.dp))
-        Text(item.displayName, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelMedium)
-    }
+@Composable private fun MediaTile(item:LocalMedia,onClick:()->Unit){
+ val context=LocalContext.current
+ val bitmap:Bitmap? by produceState<Bitmap?>(null,item.uri){value=withContext(Dispatchers.IO){MediaRepository.thumbnail(context,item.uri)}}
+ Column(Modifier.fillMaxWidth().clickable(onClick=onClick)){
+  Box(Modifier.fillMaxWidth().aspectRatio(.78f).clip(RoundedCornerShape(13.dp)).background(MaterialTheme.colorScheme.surfaceVariant)){
+   if(bitmap!=null) Image(bitmap!!.asImageBitmap(),item.displayName,Modifier.fillMaxSize(),contentScale=ContentScale.Crop) else Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center){Text(if(item.isVideo)"▶" else "▧",style=MaterialTheme.typography.headlineLarge)}
+   if(item.isVideo) Surface(Modifier.align(Alignment.BottomEnd).padding(6.dp),color=Color.Black.copy(alpha=.8f),shape=RoundedCornerShape(6.dp)){Text(formatDuration(item.durationMs),Modifier.padding(6.dp),style=MaterialTheme.typography.labelSmall,color=Color.White)}
+  };Spacer(Modifier.height(4.dp));Text(item.displayName,maxLines=1,overflow=TextOverflow.Ellipsis,style=MaterialTheme.typography.labelMedium)
+ }
 }
-
-@Composable
-fun PhotoViewer(item: LocalMedia, onClose: () -> Unit) {
-    androidx.activity.compose.BackHandler(onBack = onClose)
-    Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black)) {
-        AndroidView(
-            modifier = Modifier.fillMaxSize(),
-            factory = { context -> ImageView(context).apply { scaleType = ImageView.ScaleType.FIT_CENTER; setImageURI(item.uri) } },
-            update = { if (it.tag != item.uri) { it.setImageURI(item.uri); it.tag = item.uri } }
-        )
-        TextButton(onClick = onClose, modifier = Modifier.align(Alignment.TopStart).padding(12.dp)) {
-            Text("‹  Back", color = androidx.compose.ui.graphics.Color.White)
-        }
-    }
+@Composable private fun EmptyGallery(title:String,description:String){Column(Modifier.fillMaxSize().padding(24.dp),verticalArrangement=Arrangement.Center,horizontalAlignment=Alignment.CenterHorizontally){Text(title,style=MaterialTheme.typography.titleLarge);Spacer(Modifier.height(8.dp));Text(description,color=MaterialTheme.colorScheme.onSurfaceVariant)}}
+@Composable fun PhotoViewer(item:LocalMedia,onClose:()->Unit){
+ BackHandler(onBack=onClose);Box(Modifier.fillMaxSize().background(Color.Black)){AndroidView(Modifier.fillMaxSize(),factory={c->ImageView(c).apply{scaleType=ImageView.ScaleType.FIT_CENTER;setImageURI(item.uri)}},update={if(it.tag!=item.uri){it.setImageURI(item.uri);it.tag=item.uri}});TextButton(onClick=onClose,modifier=Modifier.align(Alignment.TopStart).statusBarsPadding().padding(12.dp)){Text("‹ Back",color=Color.White)}}
 }
-
-private fun GalleryFilter.label() = when (this) {
-    GalleryFilter.ALL -> "All"
-    GalleryFilter.VIDEOS -> "Videos"
-    GalleryFilter.PHOTOS -> "Photos"
-}
-
-private fun MediaSort.label() = when (this) {
-    MediaSort.NEWEST -> "Newest"
-    MediaSort.OLDEST -> "Oldest"
-    MediaSort.NAME -> "Name"
-    MediaSort.SIZE -> "File size"
-    MediaSort.DURATION -> "Duration"
-}
-
-fun formatDuration(ms: Long): String {
-    val total = (ms / 1000).coerceAtLeast(0)
-    val hours = total / 3600
-    val minutes = (total % 3600) / 60
-    val seconds = total % 60
-    return if (hours > 0) "%d:%02d:%02d".format(hours, minutes, seconds) else "%d:%02d".format(minutes, seconds)
-}
+private fun MediaSort.label()=when(this){MediaSort.NEWEST->"Newest";MediaSort.OLDEST->"Oldest";MediaSort.NAME->"Name";MediaSort.SIZE->"File size";MediaSort.DURATION->"Duration"}
+fun formatDuration(ms:Long):String{val t=(ms/1000).coerceAtLeast(0);val h=t/3600;val m=(t%3600)/60;val s=t%60;return if(h>0)"%d:%02d:%02d".format(h,m,s) else "%d:%02d".format(m,s)}
