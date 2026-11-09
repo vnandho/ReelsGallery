@@ -1,6 +1,10 @@
 package com.reelsgallery.player.ui
 
 import android.content.Context
+import android.content.ContentValues
+import android.graphics.Bitmap
+import android.media.MediaMetadataRetriever
+import android.provider.MediaStore
 import android.media.AudioManager
 import android.app.PictureInPictureParams
 import android.os.Build
@@ -40,6 +44,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -69,6 +74,9 @@ import com.reelsgallery.player.player.GestureZone
 import com.reelsgallery.player.player.PlayerGestureClassifier
 import com.reelsgallery.player.player.SwipeAction
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -82,6 +90,7 @@ fun PlayerScreen(
     onClose: () -> Unit
 ) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     val window = activity.window
     val safeQueue = remember(queue) { queue.ifEmpty { emptyList() } }
     if (safeQueue.isEmpty()) {
@@ -410,7 +419,20 @@ fun PlayerScreen(
                         TextButton(onClick = { muted = !muted; exoPlayer.volume = if (muted) 0f else 1f; touchInteraction() }) {
                             Text(if (muted) "◖× Mute" else "◖ Mute", color = Color.White)
                         }
-                        TextButton(onClick = { overlayMessage = "Screenshot"; touchInteraction() }) {
+                        TextButton(onClick = {
+                            val currentUri = safeQueue.getOrNull(exoPlayer.currentMediaItemIndex)?.uri
+                            if (currentUri == null) {
+                                overlayMessage = "No video frame available"
+                            } else {
+                                coroutineScope.launch {
+                                    val saved = withContext(Dispatchers.IO) {
+                                        captureVideoScreenshot(context, currentUri, exoPlayer.currentPosition)
+                                    }
+                                    overlayMessage = if (saved) "Screenshot saved to Pictures/ReelsGallery" else "Screenshot failed"
+                                    touchInteraction()
+                                }
+                            }
+                        }) {
                             Text("▣ Shot", color = Color.White)
                         }
                         TextButton(onClick = { rotation = (rotation + 90) % 360; touchInteraction() }) {
@@ -541,6 +563,40 @@ fun PlayerScreen(
                 shape = MaterialTheme.shapes.medium
             ) { Text(overlayMessage!!, modifier = Modifier.padding(horizontal = 16.dp, vertical = 9.dp), color = Color.White) }
         }
+    }
+}
+
+private fun captureVideoScreenshot(context: Context, uri: android.net.Uri, positionMs: Long): Boolean {
+    val retriever = MediaMetadataRetriever()
+    var bitmap: Bitmap? = null
+    return try {
+        retriever.setDataSource(context, uri)
+        bitmap = retriever.getFrameAtTime(positionMs.coerceAtLeast(0L) * 1000L, MediaMetadataRetriever.OPTION_CLOSEST)
+        val frame = bitmap ?: return false
+        val values = ContentValues().apply {
+            put(MediaStore.Images.Media.DISPLAY_NAME, "ReelsGallery_${System.currentTimeMillis()}.jpg")
+            put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+            if (Build.VERSION.SDK_INT >= 29) {
+                put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/ReelsGallery")
+                put(MediaStore.Images.Media.IS_PENDING, 1)
+            }
+        }
+        val resolver = context.contentResolver
+        val outputUri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: return false
+        val written = resolver.openOutputStream(outputUri)?.use { stream ->
+            frame.compress(Bitmap.CompressFormat.JPEG, 95, stream)
+        } ?: false
+        if (Build.VERSION.SDK_INT >= 29) {
+            val ready = ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }
+            resolver.update(outputUri, ready, null, null)
+        }
+        if (!written) resolver.delete(outputUri, null, null)
+        written
+    } catch (_: Exception) {
+        false
+    } finally {
+        bitmap?.recycle()
+        runCatching { retriever.release() }
     }
 }
 
