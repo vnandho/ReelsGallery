@@ -11,6 +11,8 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 40
+
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
@@ -24,9 +26,9 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
-          packages: 'platform-tools'
+          packages: "platform-tools"
 
-      - name: Install Android 16 stable SDK packages
+      - name: Install Android SDK packages
         run: |
           yes | sdkmanager --licenses >/dev/null || true
           sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
@@ -34,20 +36,30 @@ jobs:
       - name: Make Gradle Wrapper Executable
         run: chmod +x ./gradlew
 
-      - name: Verify Gradle
-        run: ./gradlew --version
+      - name: Verify Gradle memory configuration
+        run: |
+          echo "===== gradle.properties ====="
+          cat gradle.properties
+          echo "===== Gradle version and JVM ====="
+          ./gradlew --version
+          echo "===== Initialize Gradle with diagnostic logging ====="
+          ./gradlew help --info
 
       - name: Run unit tests, lint and build APK
-        run: ./gradlew clean testDebugUnitTest lintDebug assembleDebug
+        run: |
+          ./gradlew --no-parallel --max-workers=1 clean testDebugUnitTest lintDebug assembleDebug
 
       - name: Verify APK signature, metadata and offline permission
         run: |
           APK="app/build/outputs/apk/debug/app-debug.apk"
           BT="$ANDROID_HOME/build-tools/36.0.0"
+
           test -s "$APK"
           "$BT/apksigner" verify --verbose "$APK"
           "$BT/aapt" dump badging "$APK" | grep "package: name='com.reelsgallery.player'"
+
           "$BT/aapt" dump permissions "$APK" > /tmp/reels-gallery-permissions.txt
+
           if grep -q 'android.permission.INTERNET' /tmp/reels-gallery-permissions.txt; then
             echo 'Unexpected INTERNET permission found in APK' >&2
             cat /tmp/reels-gallery-permissions.txt >&2
@@ -57,18 +69,31 @@ jobs:
       - name: Prepare deliverables
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/debug/app-debug.apk dist/ReelsGallery-v1.0.0-android14plus-debug.apk
+
+          cp app/build/outputs/apk/debug/app-debug.apk \
+            dist/ReelsGallery-v1.0.0-android14plus-debug.apk
+
           cp README.md PRIVACY.md PROJECT_ARCHITECTURE.md CHANGELOG.md dist/
+
           cat > dist/BUILD_REPORT.md <<'REPORT'
           # Reels Gallery — CI Build Report
 
           Build environment: GitHub Actions, Ubuntu runner, Temurin JDK 21, Android API 36 / Build Tools 36.0.0.
 
-          Gradle tasks completed successfully: `clean`, `testDebugUnitTest`, `lintDebug`, `assembleDebug`. APK signature verification, package ID check, and no-INTERNET-permission audit also passed in the preceding step.
+          Gradle tasks completed successfully: `clean`, `testDebugUnitTest`, `lintDebug`, `assembleDebug`.
 
-          Output: `ReelsGallery-v1.0.0-android14plus-debug.apk` (debug-signed). Device installation and real-device playback testing are not performed by this workflow.
+          APK signature verification, package ID check, and no-INTERNET-permission audit passed.
+
+          Output: `ReelsGallery-v1.0.0-android14plus-debug.apk` (debug-signed).
+
+          Device installation and real-device playback testing are not performed by this workflow.
           REPORT
-          (cd dist && sha256sum ReelsGallery-v1.0.0-android14plus-debug.apk > SHA256SUMS.txt)
+
+          (
+            cd dist
+            sha256sum ReelsGallery-v1.0.0-android14plus-debug.apk > SHA256SUMS.txt
+          )
+
           git archive --format=zip --output=dist/ReelsGallery-source.zip HEAD
 
       - name: Upload debug APK
