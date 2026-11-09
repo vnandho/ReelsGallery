@@ -3,7 +3,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- Aplikasi tidak membutuhkan akses internet -->
     <uses-permission
         android:name="android.permission.INTERNET"
         tools:node="remove" />
@@ -11,19 +10,18 @@
     <uses-permission
         android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
 
-    <!-- Android 12 dan lebih lama -->
+    <!-- Redmi Note 9 Pro: Android 12 / API 31 -->
     <uses-permission
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
 
-    <!-- Android 13 -->
+    <!-- Kompatibilitas Android versi lebih baru -->
     <uses-permission
         android:name="android.permission.READ_MEDIA_IMAGES" />
 
     <uses-permission
         android:name="android.permission.READ_MEDIA_VIDEO" />
 
-    <!-- Android 14 dan lebih baru -->
     <uses-permission
         android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
 
