@@ -67,7 +67,7 @@ fun GalleryScreen(media:List<LocalMedia>,settings:SettingsStore,refreshToken:Int
    Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(5.dp)){
     listOf(GalleryFilter.ALL,GalleryFilter.VIDEOS,GalleryFilter.PHOTOS).forEach{f->val label=when(f){GalleryFilter.ALL->"All";GalleryFilter.VIDEOS->"Videos";GalleryFilter.PHOTOS->"Images"};FilterChip(selected=filter==f,onClick={filter=f},label={Text(label)})}
     Spacer(Modifier.weight(1f))
-    Box{TextButton(onClick={sortMenu=true}){Text("Sort by ▾")};DropdownMenu(expanded=sortMenu,onDismissRequest={sortMenu=false}){MediaSort.entries.filter{filter!=GalleryFilter.PHOTOS||it!=MediaSort.DURATION}.forEach{m->DropdownMenuItem(text={Text(m.label())},onClick={sort=m;sortMenu=false})}}}
+    Box{TextButton(onClick={sortMenu=true}){Text("Sort by ▾")};DropdownMenu(expanded=sortMenu,onDismissRequest={sortMenu=false}){MediaSort.entries.filter{filter!=GalleryFilter.PHOTOS||it!=MediaSort.DURATION}.forEach{m->DropdownMenuItem(text={Text(m.label())},onClick={sort=m;sortMenu=false})};if(filter==GalleryFilter.ALL){HorizontalDivider();DropdownMenuItem(text={Text(if(groupByType) "Ungroup media" else "Group by type")},onClick={groupByType=!groupByType;sortMenu=false})}}}
    }
    OutlinedTextField(value=search,onValueChange={search=it},modifier=Modifier.fillMaxWidth(),singleLine=true,placeholder={Text("Search media")},shape=RoundedCornerShape(14.dp),trailingIcon={if(search.isNotEmpty())IconButton(onClick={search=""}){Text("✕")}})
   }
