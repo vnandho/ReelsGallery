@@ -9,6 +9,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
@@ -20,6 +21,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
@@ -41,6 +45,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -113,24 +118,18 @@ fun PlayerScreen(
 
     BackHandler(onBack = onClose)
 
+    // Keep Android status/navigation bars visible. Player controls use safeDrawing insets,
+    // so menus and buttons never sit underneath the system bars.
     DisposableEffect(window) {
         val controller = WindowCompat.getInsetsController(window, window.decorView)
-        controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        controller.hide(WindowInsetsCompat.Type.systemBars())
+        controller.show(WindowInsetsCompat.Type.systemBars())
+        controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_DEFAULT
         onDispose {
             controller.show(WindowInsetsCompat.Type.systemBars())
             val attrs = window.attributes
             attrs.screenBrightness = originalScreenBrightness
             window.attributes = attrs
         }
-    }
-
-    DisposableEffect(fullscreen, window) {
-        val controller = WindowCompat.getInsetsController(window, window.decorView)
-        if (fullscreen) controller.hide(WindowInsetsCompat.Type.systemBars())
-        else controller.show(WindowInsetsCompat.Type.systemBars())
-        controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        onDispose { }
     }
 
     DisposableEffect(exoPlayer, urisKey) {
@@ -352,17 +351,42 @@ fun PlayerScreen(
 
         if (controlsVisible) {
             Column(
-                Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.28f)).padding(horizontal = 14.dp, vertical = 12.dp),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .windowInsetsPadding(WindowInsets.safeDrawing)
+                    .padding(horizontal = 16.dp, vertical = 10.dp)
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(Color.Black.copy(alpha = 0.58f), Color.Transparent, Color.Black.copy(alpha = 0.72f))
+                        )
+                    ),
                 verticalArrangement = Arrangement.SpaceBetween
             ) {
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(onClick = onClose) { Text("‹  Back", color = Color.White) }
-                    Column(Modifier.weight(1f)) {
-                        Text(safeQueue.getOrNull(exoPlayer.currentMediaItemIndex)?.displayName ?: "Video", color = Color.White, maxLines = 1)
-                        Text("${exoPlayer.currentMediaItemIndex + 1} / ${safeQueue.size}", color = Color.LightGray, style = MaterialTheme.typography.labelSmall)
+                // Top navigation / file information
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(onClick = onClose) {
+                        Text("‹", color = Color.White, style = MaterialTheme.typography.headlineMedium)
+                    }
+                    Column(Modifier.weight(1f).padding(start = 4.dp)) {
+                        Text(
+                            safeQueue.getOrNull(exoPlayer.currentMediaItemIndex)?.displayName ?: "Video",
+                            color = Color.White,
+                            style = MaterialTheme.typography.titleMedium,
+                            maxLines = 1
+                        )
+                        Text(
+                            "VIDEO  •  ${exoPlayer.currentMediaItemIndex + 1} / ${safeQueue.size}",
+                            color = Color.LightGray,
+                            style = MaterialTheme.typography.labelSmall
+                        )
                     }
                     Box {
-                        TextButton(onClick = { moreMenu = true }) { Text("⋮", color = Color.White, style = MaterialTheme.typography.titleLarge) }
+                        TextButton(onClick = { moreMenu = true }) {
+                            Text("⋮", color = Color.White, style = MaterialTheme.typography.headlineMedium)
+                        }
                         DropdownMenu(expanded = moreMenu, onDismissRequest = { moreMenu = false }) {
                             DropdownMenuItem(text = { Text("Audio track") }, onClick = {
                                 moreMenu = false
@@ -384,75 +408,134 @@ fun PlayerScreen(
                     }
                 }
 
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-                    PlayerAction("|◀", "Previous video", settings.iconSize) { navigatePrevious() }
-                    PlayerAction("↶", "Back ${settings.jumpSeconds}s", settings.iconSize) {
-                        exoPlayer.seekTo((exoPlayer.currentPosition - settings.jumpSeconds * 1000L).coerceAtLeast(0L)); touchInteraction()
-                    }
-                    PlayerAction(if (isPlaying) "Ⅱ" else "▶", if (isPlaying) "Pause" else "Play", settings.iconSize + 8) {
-                        if (exoPlayer.isPlaying) exoPlayer.pause() else exoPlayer.play()
+                // Primary transport controls, centered over the video
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    PlayerAction("⏮", "Previous", settings.iconSize) { navigatePrevious() }
+                    Spacer(Modifier.size(18.dp))
+                    PlayerAction("↶", "${settings.jumpSeconds}s", settings.iconSize) {
+                        exoPlayer.seekTo((exoPlayer.currentPosition - settings.jumpSeconds * 1000L).coerceAtLeast(0L))
                         touchInteraction()
                     }
-                    PlayerAction("↷", "Forward ${settings.jumpSeconds}s", settings.iconSize) {
-                        val end = exoPlayer.duration.takeIf { it > 0 } ?: Long.MAX_VALUE
-                        exoPlayer.seekTo((exoPlayer.currentPosition + settings.jumpSeconds * 1000L).coerceAtMost(end)); touchInteraction()
+                    Spacer(Modifier.size(12.dp))
+                    Surface(
+                        onClick = {
+                            if (exoPlayer.isPlaying) exoPlayer.pause() else exoPlayer.play()
+                            touchInteraction()
+                        },
+                        shape = RoundedCornerShape(50),
+                        color = Color.Black.copy(alpha = 0.62f),
+                        modifier = Modifier.size(68.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text(if (isPlaying) "Ⅱ" else "▶", color = Color.White, style = MaterialTheme.typography.headlineLarge)
+                        }
                     }
-                    PlayerAction("▶|", "Next video", settings.iconSize) { navigateNext() }
+                    Spacer(Modifier.size(12.dp))
+                    PlayerAction("↷", "${settings.jumpSeconds}s", settings.iconSize) {
+                        val end = exoPlayer.duration.takeIf { it > 0 } ?: Long.MAX_VALUE
+                        exoPlayer.seekTo((exoPlayer.currentPosition + settings.jumpSeconds * 1000L).coerceAtMost(end))
+                        touchInteraction()
+                    }
+                    Spacer(Modifier.size(18.dp))
+                    PlayerAction("⏭", "Next", settings.iconSize) { navigateNext() }
                 }
 
-                Column(Modifier.fillMaxWidth()) {
-                    if (errorMessage != null) {
-                        Text(errorMessage!!, color = Color(0xFFFF8A80), modifier = Modifier.padding(bottom = 8.dp))
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(formatDuration(positionMs), color = Color.White, style = MaterialTheme.typography.labelSmall)
-                        Slider(
-                            modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
-                            value = if (isSeeking) seekValue else positionMs.toFloat(),
-                            onValueChange = { seekValue = it; isSeeking = true; touchInteraction() },
-                            onValueChangeFinished = { exoPlayer.seekTo(seekValue.toLong()); isSeeking = false; touchInteraction() },
-                            valueRange = 0f..(durationMs.coerceAtLeast(1L).toFloat())
-                        )
-                        Text(formatDuration(durationMs), color = Color.White, style = MaterialTheme.typography.labelSmall)
-                    }
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                        TextButton(onClick = { muted = !muted; exoPlayer.volume = if (muted) 0f else 1f; touchInteraction() }) { Text(if (muted) "Muted" else "Sound", color = Color.White) }
-                        TextButton(onClick = {
-                            if (Build.VERSION.SDK_INT >= 26) {
-                                runCatching { activity.enterPictureInPictureMode(PictureInPictureParams.Builder().setAspectRatio(Rational(16, 9)).build()) }
-                            } else overlayMessage = "Picture-in-picture requires Android 8.0+"
-                        }) { Text("PiP", color = Color.White) }
-                        TextButton(onClick = { repeatMode = when (repeatMode) { Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ONE; Player.REPEAT_MODE_ONE -> Player.REPEAT_MODE_ALL; else -> Player.REPEAT_MODE_OFF }; exoPlayer.repeatMode = repeatMode; touchInteraction() }) {
-                            Text(when (repeatMode) { Player.REPEAT_MODE_ONE -> "↻1"; Player.REPEAT_MODE_ALL -> "↻ All"; else -> "↻ Off" }, color = Color.White)
+                // Bottom control dock: timeline first, then utilities
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(22.dp),
+                    color = Color(0xE61A1A1A),
+                    tonalElevation = 0.dp,
+                    shadowElevation = 8.dp
+                ) {
+                    Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp)) {
+                        if (errorMessage != null) {
+                            Text(errorMessage!!, color = Color(0xFFFF8A80), modifier = Modifier.padding(bottom = 6.dp))
                         }
-                        TextButton(onClick = { rotation = (rotation + 90) % 360; touchInteraction() }) { Text("⤾ ${rotation}°", color = Color.White) }
-                        Box {
-                            TextButton(onClick = { speedMenu = true }) { Text("${speed}×", color = Color.White) }
-                            DropdownMenu(expanded = speedMenu, onDismissRequest = { speedMenu = false }) {
-                                listOf(0.25f, 0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f, 3f, 4f).forEach { value ->
-                                    DropdownMenuItem(text = { Text("${value}×") }, onClick = { speed = value; exoPlayer.setPlaybackSpeed(value); speedMenu = false; touchInteraction() })
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(formatDuration(positionMs), color = Color.White, style = MaterialTheme.typography.labelSmall)
+                            Slider(
+                                modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+                                value = if (isSeeking) seekValue else positionMs.toFloat(),
+                                onValueChange = { seekValue = it; isSeeking = true; touchInteraction() },
+                                onValueChangeFinished = { exoPlayer.seekTo(seekValue.toLong()); isSeeking = false; touchInteraction() },
+                                valueRange = 0f..durationMs.coerceAtLeast(1L).toFloat()
+                            )
+                            Text(formatDuration(durationMs), color = Color.White, style = MaterialTheme.typography.labelSmall)
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            TextButton(onClick = { muted = !muted; exoPlayer.volume = if (muted) 0f else 1f; touchInteraction() }) {
+                                Text(if (muted) "◖×  Mute" else "◖  Sound", color = Color.White)
+                            }
+                            TextButton(onClick = {
+                                if (Build.VERSION.SDK_INT >= 26) {
+                                    runCatching { activity.enterPictureInPictureMode(PictureInPictureParams.Builder().setAspectRatio(Rational(16, 9)).build()) }
+                                } else overlayMessage = "Picture-in-picture requires Android 8.0+"
+                            }) { Text("▣  PiP", color = Color.White) }
+                            TextButton(onClick = {
+                                repeatMode = when (repeatMode) {
+                                    Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ONE
+                                    Player.REPEAT_MODE_ONE -> Player.REPEAT_MODE_ALL
+                                    else -> Player.REPEAT_MODE_OFF
+                                }
+                                exoPlayer.repeatMode = repeatMode
+                                touchInteraction()
+                            }) {
+                                Text(when (repeatMode) {
+                                    Player.REPEAT_MODE_ONE -> "↻ 1"
+                                    Player.REPEAT_MODE_ALL -> "↻ All"
+                                    else -> "↻ Off"
+                                }, color = Color.White)
+                            }
+                            TextButton(onClick = { rotation = (rotation + 90) % 360; touchInteraction() }) {
+                                Text("⤾  Rotate", color = Color.White)
+                            }
+                            Box {
+                                TextButton(onClick = { speedMenu = true }) { Text("${speed}×", color = Color.White) }
+                                DropdownMenu(expanded = speedMenu, onDismissRequest = { speedMenu = false }) {
+                                    listOf(0.25f, 0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f, 3f, 4f).forEach { value ->
+                                        DropdownMenuItem(text = { Text("${value}×") }, onClick = {
+                                            speed = value
+                                            exoPlayer.setPlaybackSpeed(value)
+                                            speedMenu = false
+                                            touchInteraction()
+                                        })
+                                    }
                                 }
                             }
-                        }
-                        Box {
-                            TextButton(onClick = { aspectMenu = true }) { Text("▣", color = Color.White) }
-                            DropdownMenu(expanded = aspectMenu, onDismissRequest = { aspectMenu = false }) {
-                                listOf(
-                                    "Fit" to AspectRatioFrameLayout.RESIZE_MODE_FIT,
-                                    "Fill / crop" to AspectRatioFrameLayout.RESIZE_MODE_ZOOM,
-                                    "Stretch" to AspectRatioFrameLayout.RESIZE_MODE_FILL,
-                                    "Fixed width" to AspectRatioFrameLayout.RESIZE_MODE_FIXED_WIDTH
-                                ).forEach { (label, mode) ->
-                                    DropdownMenuItem(text = { Text(label) }, onClick = { resizeMode = mode; aspectMenu = false; touchInteraction() })
+                            Box {
+                                TextButton(onClick = { aspectMenu = true }) { Text("▣", color = Color.White) }
+                                DropdownMenu(expanded = aspectMenu, onDismissRequest = { aspectMenu = false }) {
+                                    listOf(
+                                        "Fit" to AspectRatioFrameLayout.RESIZE_MODE_FIT,
+                                        "Fill / crop" to AspectRatioFrameLayout.RESIZE_MODE_ZOOM,
+                                        "Stretch" to AspectRatioFrameLayout.RESIZE_MODE_FILL,
+                                        "Fixed width" to AspectRatioFrameLayout.RESIZE_MODE_FIXED_WIDTH
+                                    ).forEach { (label, mode) ->
+                                        DropdownMenuItem(text = { Text(label) }, onClick = {
+                                            resizeMode = mode
+                                            aspectMenu = false
+                                            touchInteraction()
+                                        })
+                                    }
                                 }
                             }
+                            TextButton(onClick = { fullscreen = !fullscreen; touchInteraction() }) {
+                                Text(if (fullscreen) "⛶" else "⤢", color = Color.White)
+                            }
                         }
-                        TextButton(onClick = { fullscreen = !fullscreen; touchInteraction() }) { Text(if (fullscreen) "⛶" else "⤢", color = Color.White) }
                     }
                 }
             }
         }
-
         if (brightnessIndicator != null) {
             Surface(
                 modifier = Modifier.align(Alignment.Center),
