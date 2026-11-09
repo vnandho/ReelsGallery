@@ -1,3 +1,4 @@
+
 name: Android debug build
 
 on:
@@ -25,29 +26,33 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
-        with:
-          packages: "platform-tools"
 
       - name: Install Android SDK packages
         run: |
           yes | sdkmanager --licenses >/dev/null || true
           sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
 
+      - name: Set up Gradle and cache
+        uses: gradle/actions/setup-gradle@v4
+
       - name: Make Gradle Wrapper Executable
         run: chmod +x ./gradlew
 
-      - name: Verify Gradle memory configuration
+      - name: Verify Gradle configuration
         run: |
           echo "===== gradle.properties ====="
           cat gradle.properties
+
           echo "===== Gradle version and JVM ====="
           ./gradlew --version
-          echo "===== Initialize Gradle with diagnostic logging ====="
+
+          echo "===== Gradle diagnostic ====="
           ./gradlew help --info
 
       - name: Run unit tests, lint and build APK
         run: |
-          ./gradlew --no-parallel --max-workers=1 clean testDebugUnitTest lintDebug assembleDebug
+          ./gradlew --no-parallel --max-workers=1 \
+            clean testDebugUnitTest lintDebug assembleDebug
 
       - name: Verify APK signature, metadata and offline permission
         run: |
@@ -71,7 +76,7 @@ jobs:
           mkdir -p dist
 
           cp app/build/outputs/apk/debug/app-debug.apk \
-            dist/ReelsGallery-v1.0.0-android14plus-debug.apk
+            dist/ReelsGallery-v1.0.0-android12plus-debug.apk
 
           cp README.md PRIVACY.md PROJECT_ARCHITECTURE.md CHANGELOG.md dist/
 
@@ -84,14 +89,16 @@ jobs:
 
           APK signature verification, package ID check, and no-INTERNET-permission audit passed.
 
-          Output: `ReelsGallery-v1.0.0-android14plus-debug.apk` (debug-signed).
+          Minimum supported Android version: Android 12 / API 31.
+
+          Output: `ReelsGallery-v1.0.0-android12plus-debug.apk` (debug-signed).
 
           Device installation and real-device playback testing are not performed by this workflow.
           REPORT
 
           (
             cd dist
-            sha256sum ReelsGallery-v1.0.0-android14plus-debug.apk > SHA256SUMS.txt
+            sha256sum ReelsGallery-v1.0.0-android12plus-debug.apk > SHA256SUMS.txt
           )
 
           git archive --format=zip --output=dist/ReelsGallery-source.zip HEAD
@@ -100,7 +107,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ReelsGallery-debug-apk
-          path: dist/ReelsGallery-v1.0.0-android14plus-debug.apk
+          path: dist/ReelsGallery-v1.0.0-android12plus-debug.apk
           if-no-files-found: error
 
       - name: Upload source and report
