@@ -106,7 +106,8 @@ fun PlayerScreen(
     var muted by remember { mutableStateOf(false) }
     var lastCenterTap by remember { mutableLongStateOf(0L) }
     var controlsVisible by remember { mutableStateOf(true) }
-    var repeatMode by remember { mutableIntStateOf(Player.REPEAT_MODE_OFF) }
+    var repeatMode by remember { mutableIntStateOf(settings.repeatMode) }
+    var pendingSeekMs by remember { mutableLongStateOf(0L) }
     var positionMs by remember { mutableLongStateOf(0L) }
     var durationMs by remember { mutableLongStateOf(0L) }
     var seekValue by remember { mutableFloatStateOf(0f) }
@@ -146,7 +147,7 @@ fun PlayerScreen(
         val safeIndex = startIndex.coerceIn(0, mediaItems.lastIndex)
         val resumeAt = settings.position(safeQueue[safeIndex].uri.toString())
         exoPlayer.setMediaItems(mediaItems, safeIndex, resumeAt)
-        exoPlayer.repeatMode = repeatMode
+        exoPlayer.repeatMode = when (settings.repeatMode) { 1 -> Player.REPEAT_MODE_ONE; 2 -> Player.REPEAT_MODE_ALL; else -> Player.REPEAT_MODE_OFF }
         exoPlayer.prepare()
         exoPlayer.playWhenReady = true
 
@@ -305,7 +306,7 @@ fun PlayerScreen(
                         if (change.pressed && zone == GestureZone.CENTER && !isVertical && abs(dx) > viewConfiguration.touchSlop && abs(dx) > abs(dy) * 1.3f  ) {
                             val delta = (dx / size.width.toFloat() * (durationMs.coerceAtLeast(1L) * 0.5f)).toLong()
                             val target = (seekStart + delta).coerceIn(0L, durationMs.coerceAtLeast(1L))
-                            exoPlayer.seekTo(target)
+                            pendingSeekMs = target
                             positionMs = target
                             overlayMessage = formatDuration(target)
                             horizontalHandled = true
@@ -342,16 +343,30 @@ fun PlayerScreen(
                             }
                         }
                         if (!change.pressed) {
+                            if (horizontalHandled) exoPlayer.seekTo(pendingSeekMs.coerceIn(0L, durationMs.coerceAtLeast(1L)))
                             if (!moved) {
                                 val now = android.os.SystemClock.elapsedRealtime()
-                                if (zone == GestureZone.CENTER && now - lastCenterTap < 320L) {
-                                    exoPlayer.pause()
-                                    overlayMessage = "Paused"
+                                if (now - lastCenterTap < 320L) {
+                                    when (zone) {
+                                        GestureZone.LEFT -> {
+                                            val target = (exoPlayer.currentPosition - settings.doubleTapSeekSeconds * 1000L).coerceAtLeast(0L)
+                                            exoPlayer.seekTo(target); positionMs = target
+                                            overlayMessage = "-${settings.doubleTapSeekSeconds}s"
+                                        }
+                                        GestureZone.RIGHT -> {
+                                            val target = (exoPlayer.currentPosition + settings.doubleTapSeekSeconds * 1000L).coerceAtMost(durationMs.coerceAtLeast(1L))
+                                            exoPlayer.seekTo(target); positionMs = target
+                                            overlayMessage = "+${settings.doubleTapSeekSeconds}s"
+                                        }
+                                        GestureZone.CENTER -> {
+                                            if (exoPlayer.isPlaying) { exoPlayer.pause(); overlayMessage = "Paused" }
+                                            else { exoPlayer.play(); overlayMessage = "Playing" }
+                                        }
+                                    }
                                     lastCenterTap = 0L
                                 } else {
                                     lastCenterTap = now
-                                    controlsVisible = !controlsVisible
-                                    interactionId++
+                                    if (zone == GestureZone.CENTER) { controlsVisible = !controlsVisible; interactionId++ }
                                 }
                             }
                             break
@@ -421,22 +436,6 @@ fun PlayerScreen(
                         TextButton(onClick = { muted = !muted; exoPlayer.volume = if (muted) 0f else 1f; touchInteraction() }, modifier = Modifier.size(42.dp)) {
                             Text(if (muted) "◖̸" else "◖", color = Color.White, style = MaterialTheme.typography.titleLarge)
                         }
-                        TextButton(onClick = {
-                            val currentUri = safeQueue.getOrNull(exoPlayer.currentMediaItemIndex)?.uri
-                            if (currentUri == null) {
-                                overlayMessage = "No video frame available"
-                            } else {
-                                coroutineScope.launch {
-                                    val saved = withContext(Dispatchers.IO) {
-                                        captureVideoScreenshot(context, currentUri, exoPlayer.currentPosition)
-                                    }
-                                    overlayMessage = if (saved) "Screenshot saved to Pictures/ReelsGallery" else "Screenshot failed"
-                                    touchInteraction()
-                                }
-                            }
-                        }) {
-                            Text("▣", color = Color.White, style = MaterialTheme.typography.titleLarge)
-                        }
                         TextButton(onClick = { rotation = (rotation + 90) % 360; touchInteraction() }) {
                             Text("↻", color = Color.White, style = MaterialTheme.typography.titleLarge)
                         }
@@ -447,6 +446,7 @@ fun PlayerScreen(
                                 else -> Player.REPEAT_MODE_OFF
                             }
                             exoPlayer.repeatMode = repeatMode
+                            settings.repeatMode = when (repeatMode) { Player.REPEAT_MODE_ONE -> 1; Player.REPEAT_MODE_ALL -> 2; else -> 0 }
                             touchInteraction()
                         }) {
                             Text(if (repeatMode == Player.REPEAT_MODE_OFF) "⟲" else if (repeatMode == Player.REPEAT_MODE_ONE) "↻¹" else "↻", color = Color.White, style = MaterialTheme.typography.titleLarge)

@@ -17,6 +17,14 @@ class SettingsStore(context: Context) {
         get() = prefs.getInt("jump_seconds", 10).let { if (it in listOf(5, 10, 15, 30, 60)) it else 10 }
         set(value) = prefs.edit().putInt("jump_seconds", value).apply()
 
+    var repeatMode: Int
+        get() = prefs.getInt("player_repeat_mode", 0).coerceIn(0, 2)
+        set(value) = prefs.edit().putInt("player_repeat_mode", value.coerceIn(0, 2)).apply()
+
+    var doubleTapSeekSeconds: Int
+        get() = prefs.getInt("double_tap_seek_seconds", 5).let { if (it in listOf(1, 2, 5, 10)) it else 5 }
+        set(value) = prefs.edit().putInt("double_tap_seek_seconds", value.takeIf { it in listOf(1, 2, 5, 10) } ?: 5).apply()
+
     var autoHideSeconds: Int
         get() = prefs.getInt("auto_hide_seconds", 3).coerceIn(0, 10)
         set(value) = prefs.edit().putInt("auto_hide_seconds", value.coerceIn(0, 10)).apply()

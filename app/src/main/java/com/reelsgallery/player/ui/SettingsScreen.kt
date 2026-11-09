@@ -38,6 +38,7 @@ fun SettingsScreen(settings: SettingsStore, onBack: () -> Unit, onAppearanceChan
     var appearance by remember { mutableStateOf(settings.appearance) }
     var columns by remember { mutableIntStateOf(settings.gridColumns) }
     var jump by remember { mutableIntStateOf(settings.jumpSeconds) }
+    var doubleTapSeek by remember { mutableIntStateOf(settings.doubleTapSeekSeconds) }
     var autoHide by remember { mutableIntStateOf(settings.autoHideSeconds) }
     var iconSize by remember { mutableIntStateOf(settings.iconSize) }
     var queueScope by remember { mutableStateOf(settings.queueScope) }
@@ -58,6 +59,7 @@ fun SettingsScreen(settings: SettingsStore, onBack: () -> Unit, onAppearanceChan
                 onAppearanceChange(appearance)
                 columns = settings.gridColumns
                 jump = settings.jumpSeconds
+                doubleTapSeek = settings.doubleTapSeekSeconds
                 autoHide = settings.autoHideSeconds
                 iconSize = settings.iconSize
                 queueScope = settings.queueScope
@@ -93,6 +95,13 @@ fun SettingsScreen(settings: SettingsStore, onBack: () -> Unit, onAppearanceChan
                 ChoiceButton("Current folder", queueScope == "FOLDER") { queueScope = "FOLDER"; settings.queueScope = queueScope }
                 ChoiceButton("All videos", queueScope == "ALL") { queueScope = "ALL"; settings.queueScope = queueScope }
             }
+            Text("Double-tap seek interval", style = MaterialTheme.typography.titleMedium)
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf(1, 2, 5, 10).forEach { value ->
+                    ChoiceButton("${value}s", doubleTapSeek == value) { doubleTapSeek = value; settings.doubleTapSeekSeconds = value }
+                }
+            }
+            Text("Double-tap left or right side of the video to jump backward or forward.", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
             Text("Seek interval", style = MaterialTheme.typography.titleMedium)
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 listOf(5, 10, 15, 30, 60).forEach { value ->
