@@ -3,6 +3,7 @@ package com.reelsgallery.player.ui
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
+import androidx.compose.ui.graphics.Color
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -48,6 +49,8 @@ fun ReelsGalleryApp(activity: androidx.activity.ComponentActivity) {
         var selectedMedia by remember { mutableStateOf<LocalMedia?>(null) }
         var queue by remember { mutableStateOf(emptyList<LocalMedia>()) }
         var queueStart by remember { mutableIntStateOf(0) }
+        var splashVisible by remember { mutableStateOf(true) }
+        LaunchedEffect(Unit) { kotlinx.coroutines.delay(500); splashVisible = false }
 
         val permissionLauncher = rememberLauncherForActivityResult(
             ActivityResultContracts.RequestMultiplePermissions()
@@ -94,10 +97,8 @@ fun ReelsGalleryApp(activity: androidx.activity.ComponentActivity) {
                     onRefresh = { refreshToken++ },
                     onOpenSettings = { showSettings = true },
                     onOpenMedia = { item, orderedQueue ->
-                        if (item.isVideo) {
-                            queue = orderedQueue.ifEmpty { listOf(item) }
-                            queueStart = queue.indexOfFirst { it.id == item.id }.coerceAtLeast(0)
-                        }
+                        queue = orderedQueue.ifEmpty { listOf(item) }
+                        queueStart = queue.indexOfFirst { it.id == item.id }.coerceAtLeast(0)
                         selectedMedia = item
                     }
                 )
@@ -110,14 +111,22 @@ fun ReelsGalleryApp(activity: androidx.activity.ComponentActivity) {
             selectedMedia?.let { item ->
                 if (item.isVideo) {
                     PlayerScreen(
-                        queue = queue,
-                        startIndex = queueStart,
+                        queue = queue.filter { it.isVideo },
+                        startIndex = queue.filter { it.isVideo }.indexOfFirst { it.uri == item.uri }.coerceAtLeast(0),
                         settings = settings,
                         activity = activity,
                         onClose = { selectedMedia = null }
                     )
                 } else {
-                    PhotoViewer(item = item, onClose = { selectedMedia = null })
+                    PhotoViewer(item = item, queue = queue, startIndex = queueStart, onClose = { selectedMedia = null }, onNavigate = { next, index -> selectedMedia = next; queueStart = index })
+                }
+            }
+        }
+        if (splashVisible) {
+            androidx.compose.material3.Surface(Modifier.fillMaxSize(), color=Color(0xFF090A0F)) {
+                androidx.compose.foundation.layout.Column(Modifier.fillMaxSize(), verticalArrangement=androidx.compose.foundation.layout.Arrangement.Center, horizontalAlignment=androidx.compose.ui.Alignment.CenterHorizontally) {
+                    androidx.compose.material3.Text("Made with passion", color=Color.White, style=MaterialTheme.typography.titleLarge)
+                    androidx.compose.material3.Text("by @vnandho", color=Color.LightGray, style=MaterialTheme.typography.bodyMedium)
                 }
             }
         }
