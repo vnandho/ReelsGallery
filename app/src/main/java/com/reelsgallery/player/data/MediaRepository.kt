@@ -28,10 +28,10 @@ object MediaRepository {
  fun query(context:Context):List<LocalMedia> {
   val volumes=runCatching { MediaStore.getExternalVolumeNames(context) }.getOrDefault(setOf(MediaStore.VOLUME_EXTERNAL_PRIMARY))
   val out=ArrayList<LocalMedia>()
-  val selection="\${MediaStore.Files.FileColumns.MEDIA_TYPE}=? OR \${MediaStore.Files.FileColumns.MEDIA_TYPE}=?"
+  val selection="${MediaStore.Files.FileColumns.MEDIA_TYPE}=? OR ${MediaStore.Files.FileColumns.MEDIA_TYPE}=?"
   val args=arrayOf(MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE.toString(),MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO.toString())
   for(volume in volumes) runCatching {
-   context.contentResolver.query(MediaStore.Files.getContentUri(volume),projection,selection,args,"\${MediaStore.MediaColumns.DATE_ADDED} DESC")?.use { c ->
+   context.contentResolver.query(MediaStore.Files.getContentUri(volume),projection,selection,args,"${MediaStore.MediaColumns.DATE_ADDED} DESC")?.use { c ->
     val id=c.getColumnIndexOrThrow(MediaStore.MediaColumns._ID); val name=c.getColumnIndexOrThrow(MediaStore.MediaColumns.DISPLAY_NAME)
     val mime=c.getColumnIndexOrThrow(MediaStore.MediaColumns.MIME_TYPE); val size=c.getColumnIndexOrThrow(MediaStore.MediaColumns.SIZE)
     val date=c.getColumnIndexOrThrow(MediaStore.MediaColumns.DATE_ADDED); val path=c.getColumnIndex(MediaStore.MediaColumns.RELATIVE_PATH)
