@@ -1,6 +1,7 @@
 package com.reelsgallery.player.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -28,6 +29,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.style.TextAlign
 import com.reelsgallery.player.data.SettingsStore
 
 @Composable
@@ -44,7 +46,7 @@ fun SettingsScreen(settings: SettingsStore, onBack: () -> Unit, onAppearanceChan
     var reverse by remember { mutableStateOf(settings.reverseGestures) }
     var zone by remember { mutableIntStateOf(settings.sideZonePercent) }
 
-    Column(Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 18.dp)) {
+    Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface).padding(horizontal = 20.dp, vertical = 18.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             TextButton(onClick = onBack) { Text("‹  Back") }
             Spacer(Modifier.weight(1f))
@@ -134,6 +136,7 @@ fun SettingsScreen(settings: SettingsStore, onBack: () -> Unit, onAppearanceChan
             Text("Reels Gallery reads media through Android's media access permissions. Files, thumbnails, playback positions and preferences are processed locally. The app does not request internet access and includes no ads or analytics.", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
             Spacer(Modifier.height(20.dp))
         }
+        Text("Made with passion by @vnandho", modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall, textAlign = TextAlign.Center)
         Button(onClick = onBack, modifier = Modifier.fillMaxWidth()) { Text("Done") }
     }
 }
