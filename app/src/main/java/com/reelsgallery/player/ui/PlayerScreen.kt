@@ -105,6 +105,9 @@ fun PlayerScreen(
 
     val urisKey = remember(safeQueue) { safeQueue.joinToString("|") { it.uri.toString() } }
     val exoPlayer = remember(urisKey) { ExoPlayer.Builder(context).build() }
+    val previewPlayer = remember(urisKey) { ExoPlayer.Builder(context).build() }
+    var previewIndex by remember { mutableIntStateOf(-1) }
+    var previewDirection by remember { mutableIntStateOf(0) }
     var isPlaying by remember { mutableStateOf(true) }
     var muted by remember { mutableStateOf(false) }
     var lastCenterTap by remember { mutableLongStateOf(0L) }
@@ -132,6 +135,10 @@ fun PlayerScreen(
     val originalScreenBrightness = remember(window) { window.attributes.screenBrightness }
 
     BackHandler(onBack = onClose)
+
+    DisposableEffect(previewPlayer) {
+        onDispose { previewPlayer.release() }
+    }
 
     // Keep Android status/navigation bars visible. Player controls use safeDrawing insets,
     // so menus and buttons never sit underneath the system bars.
@@ -264,6 +271,21 @@ fun PlayerScreen(
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         val pageHeight = androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp.dp
+        if (previewIndex in safeQueue.indices && previewDirection != 0) {
+            AndroidView(
+                modifier = Modifier.fillMaxSize().graphicsLayer {
+                    translationY = (previewDirection * size.height) + verticalDragOffset
+                },
+                factory = { ctx -> PlayerView(ctx).apply {
+                    useController = false
+                    controllerAutoShow = false
+                    this.resizeMode = resizeMode
+                    setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
+                    player = previewPlayer
+                } },
+                update = { view -> view.player = previewPlayer; view.resizeMode = resizeMode; view.rotation = rotation.toFloat() }
+            )
+        }
         AndroidView(
             modifier = Modifier.fillMaxSize().graphicsLayer { translationY = verticalDragOffset },
             factory = { ctx ->
@@ -301,7 +323,8 @@ fun PlayerScreen(
                     var moved = false
                     var navigated = false
                     var horizontalHandled = false
-                var verticalHandled = false
+                    var verticalHandled = false
+                    var wasPlayingBeforeGesture = exoPlayer.isPlaying
                     val seekStart = exoPlayer.currentPosition
                     while (true) {
                         val event = awaitPointerEvent()
@@ -310,7 +333,8 @@ fun PlayerScreen(
                         val dy = change.position.y - start.y
                         val isVertical = abs(dy) > viewConfiguration.touchSlop && abs(dy) > abs(dx) * 1.3f
                         if (abs(dx) > viewConfiguration.touchSlop || abs(dy) > viewConfiguration.touchSlop) moved = true
-                        if (change.pressed && zone == GestureZone.CENTER && !isVertical && abs(dx) > viewConfiguration.touchSlop && abs(dx) > abs(dy) * 1.3f  ) {
+                        if (change.pressed && !isVertical && abs(dx) > viewConfiguration.touchSlop && abs(dx) > abs(dy) * 1.3f) {
+                            if (!horizontalHandled) { wasPlayingBeforeGesture = exoPlayer.isPlaying; exoPlayer.pause() }
                             val delta = (dx / size.width.toFloat() * (durationMs.coerceAtLeast(1L) * 0.5f)).toLong()
                             val target = (seekStart + delta).coerceIn(0L, durationMs.coerceAtLeast(1L))
                             pendingSeekMs = target
@@ -336,12 +360,25 @@ fun PlayerScreen(
                                     val delta = (travel / size.height.toFloat() * maxVolume * 1.5f).roundToInt()
                                     val value = (startVolume + delta).coerceIn(0, maxVolume)
                                     audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, value, 0)
-                                    brightnessIndicator = "◖  ${(value * 100 / maxVolume)}%"
+                                    brightnessIndicator = "🔊  ${(value * 100 / maxVolume)}%"
                                     change.consume()
                                 }
                                 GestureZone.CENTER -> {
                                     val action = PlayerGestureClassifier.classifySwipe(dx, dy, viewConfiguration.touchSlop)
                                     if (action != SwipeAction.NONE && abs(dy) > viewConfiguration.touchSlop) {
+                                        if (!verticalHandled) {
+                                            wasPlayingBeforeGesture = exoPlayer.isPlaying
+                                            exoPlayer.pause()
+                                            val currentIndex = exoPlayer.currentMediaItemIndex
+                                            val targetIndex = if (dy < 0f) currentIndex + 1 else currentIndex - 1
+                                            if (targetIndex in safeQueue.indices) {
+                                                previewIndex = targetIndex
+                                                previewDirection = if (dy < 0f) 1 else -1
+                                                previewPlayer.setMediaItem(MediaItem.fromUri(safeQueue[targetIndex].uri))
+                                                previewPlayer.prepare()
+                                                previewPlayer.pause()
+                                            }
+                                        }
                                         verticalHandled = true
                                         verticalDragOffset = dy.coerceIn(-size.height.toFloat(), size.height.toFloat())
                                         change.consume()
@@ -350,18 +387,30 @@ fun PlayerScreen(
                             }
                         }
                         if (!change.pressed) {
-                            if (horizontalHandled) exoPlayer.seekTo(pendingSeekMs.coerceIn(0L, durationMs.coerceAtLeast(1L)))
+                            if (horizontalHandled) {
+                                exoPlayer.seekTo(pendingSeekMs.coerceIn(0L, durationMs.coerceAtLeast(1L)))
+                                exoPlayer.playWhenReady = wasPlayingBeforeGesture
+                            }
                             if (verticalHandled) {
                                 val distance = verticalDragOffset
-                                if (abs(distance) > size.height * 0.18f) {
-                                    scope.launch {
-                                        verticalDragOffset = if (distance < 0f) -size.height.toFloat() else size.height.toFloat()
-                                        kotlinx.coroutines.delay(170)
-                                        if (distance < 0f) navigateNext() else navigatePrevious()
-                                        verticalDragOffset = 0f
+                                val targetIndex = previewIndex
+                                scope.launch {
+                                    val commitSwipe = targetIndex in safeQueue.indices && abs(distance) > size.height * 0.18f
+                                    val destination = if (distance < 0f) -size.height.toFloat() else size.height.toFloat()
+                                    val from = verticalDragOffset
+                                    val to = if (commitSwipe) destination else 0f
+                                    repeat(10) { step ->
+                                        verticalDragOffset = from + (to - from) * ((step + 1f) / 10f)
+                                        kotlinx.coroutines.delay(16)
                                     }
-                                } else {
-                                    scope.launch { verticalDragOffset = 0f }
+                                    if (commitSwipe) {
+                                        exoPlayer.seekTo(targetIndex, 0L)
+                                        exoPlayer.playWhenReady = true
+                                        overlayMessage = if (distance < 0f) "Next video" else "Previous video"
+                                    } else exoPlayer.playWhenReady = wasPlayingBeforeGesture
+                                    previewIndex = -1
+                                    previewDirection = 0
+                                    verticalDragOffset = 0f
                                 }
                             }
                             if (!moved) {
@@ -454,7 +503,7 @@ fun PlayerScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         TextButton(onClick = { muted = !muted; exoPlayer.volume = if (muted) 0f else 1f; touchInteraction() }, modifier = Modifier.size(42.dp)) {
-                            Text(if (muted) "◖̸" else "◖", color = Color.White, style = MaterialTheme.typography.titleLarge)
+                            Text(if (muted) "🔇" else "🔊", color = Color.White, style = MaterialTheme.typography.titleLarge)
                         }
                         TextButton(onClick = { rotation = (rotation + 90) % 360; touchInteraction() }) {
                             Text("↻", color = Color.White, style = MaterialTheme.typography.titleLarge)
@@ -514,9 +563,9 @@ fun PlayerScreen(
                                 if (exoPlayer.isPlaying) exoPlayer.pause() else exoPlayer.play()
                                 touchInteraction()
                             },
-                            shape = RoundedCornerShape(50),
+                            shape = RoundedCornerShape(8.dp),
                             color = Color.White.copy(alpha = 0.16f),
-                            modifier = Modifier.size(42.dp)
+                            modifier = Modifier.size(width = 58.dp, height = 38.dp)
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 Text(if (isPlaying) "Ⅱ" else "▶", color = Color.White, style = MaterialTheme.typography.headlineMedium)
