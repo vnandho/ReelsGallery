@@ -281,12 +281,12 @@ fun PlayerScreen(
                 contentDescription = "Adjacent video preview",
                 contentScale = androidx.compose.ui.layout.ContentScale.Fit,
                 modifier = Modifier.fillMaxSize().graphicsLayer {
-                    translationY = pageHeight.toPx() * (if (verticalDragOffset <= 0f) 1f else -1f) + verticalOffset.value
+                    translationY = pageHeight.toPx() * (if (verticalDragOffset <= 0f) 1f else -1f) + verticalDragOffset
                 }
             )
         }
         AndroidView(
-            modifier = Modifier.fillMaxSize().graphicsLayer { translationY = verticalOffset.value },
+            modifier = Modifier.fillMaxSize().graphicsLayer { translationY = verticalDragOffset },
             factory = { ctx ->
                 PlayerView(ctx).apply {
                     useController = false
