@@ -17,6 +17,10 @@ class SettingsStore(context: Context) {
         get() = prefs.getInt("jump_seconds", 10).let { if (it in listOf(5, 10, 15, 30, 60)) it else 10 }
         set(value) = prefs.edit().putInt("jump_seconds", value).apply()
 
+    var playerMuted: Boolean
+        get() = prefs.getBoolean("player_muted", false)
+        set(value) = prefs.edit().putBoolean("player_muted", value).apply()
+
     var repeatMode: Int
         get() = prefs.getInt("player_repeat_mode", 0).coerceIn(0, 2)
         set(value) = prefs.edit().putInt("player_repeat_mode", value.coerceIn(0, 2)).apply()

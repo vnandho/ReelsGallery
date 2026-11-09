@@ -1,6 +1,7 @@
 package com.reelsgallery.player.ui
 
 import android.content.Context
+import android.content.pm.ActivityInfo
 import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever
 import android.content.ContentValues
@@ -109,7 +110,7 @@ fun PlayerScreen(
     var previewIndex by remember { mutableIntStateOf(-1) }
     var previewDirection by remember { mutableIntStateOf(0) }
     var isPlaying by remember { mutableStateOf(true) }
-    var muted by remember { mutableStateOf(false) }
+    var muted by remember { mutableStateOf(settings.playerMuted) }
     var lastCenterTap by remember { mutableLongStateOf(0L) }
     var controlsVisible by remember { mutableStateOf(true) }
     var repeatMode by remember { mutableIntStateOf(settings.repeatMode) }
@@ -120,7 +121,7 @@ fun PlayerScreen(
     var durationMs by remember { mutableLongStateOf(0L) }
     var seekValue by remember { mutableFloatStateOf(0f) }
     var isSeeking by remember { mutableStateOf(false) }
-    var rotation by remember { mutableIntStateOf(0) }
+    var landscape by remember { mutableStateOf(false) }
     var speed by remember { mutableFloatStateOf(1f) }
     var resizeMode by remember { mutableIntStateOf(AspectRatioFrameLayout.RESIZE_MODE_FIT) }
     var fullscreen by remember { mutableStateOf(false) }
@@ -147,6 +148,7 @@ fun PlayerScreen(
         controller.show(WindowInsetsCompat.Type.systemBars())
         controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         onDispose {
+            activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
             controller.show(WindowInsetsCompat.Type.systemBars())
             val attrs = window.attributes
             attrs.screenBrightness = originalScreenBrightness
@@ -159,6 +161,7 @@ fun PlayerScreen(
         val safeIndex = startIndex.coerceIn(0, mediaItems.lastIndex)
         val resumeAt = settings.position(safeQueue[safeIndex].uri.toString())
         exoPlayer.setMediaItems(mediaItems, safeIndex, resumeAt)
+        exoPlayer.volume = if (settings.playerMuted) 0f else 1f
         exoPlayer.repeatMode = when (settings.repeatMode) { 1 -> Player.REPEAT_MODE_ONE; 2 -> Player.REPEAT_MODE_ALL; else -> Player.REPEAT_MODE_OFF }
         exoPlayer.prepare()
         exoPlayer.playWhenReady = true
@@ -283,7 +286,7 @@ fun PlayerScreen(
                     setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
                     player = previewPlayer
                 } },
-                update = { view -> view.player = previewPlayer; view.resizeMode = resizeMode; view.rotation = rotation.toFloat() }
+                update = { view -> view.player = previewPlayer; view.resizeMode = resizeMode; view.rotation = 0f }
             )
         }
         AndroidView(
@@ -301,7 +304,7 @@ fun PlayerScreen(
             update = { view ->
                 view.player = exoPlayer
                 view.resizeMode = resizeMode
-                view.rotation = rotation.toFloat()
+                view.rotation = 0f
             }
         )
 
@@ -502,7 +505,7 @@ fun PlayerScreen(
                         horizontalArrangement = Arrangement.SpaceEvenly,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        TextButton(onClick = { muted = !muted; exoPlayer.volume = if (muted) 0f else 1f; touchInteraction() }, modifier = Modifier.size(42.dp)) {
+                        TextButton(onClick = { muted = !muted; settings.playerMuted = muted; exoPlayer.volume = if (muted) 0f else 1f; touchInteraction() }, modifier = Modifier.size(42.dp)) {
                             Text(if (muted) "🔇" else "🔊", color = Color.White, style = MaterialTheme.typography.titleLarge)
                         }
                         TextButton(onClick = { rotation = (rotation + 90) % 360; touchInteraction() }) {
