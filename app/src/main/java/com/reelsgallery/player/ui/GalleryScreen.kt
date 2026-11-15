@@ -81,7 +81,7 @@ fun GalleryScreen(media:List<LocalMedia>,settings:SettingsStore,refreshToken:Int
    OutlinedTextField(value=search,onValueChange={search=it},modifier=Modifier.fillMaxWidth(),singleLine=true,placeholder={Text("Search media")},shape=RoundedCornerShape(14.dp),trailingIcon={if(search.isNotEmpty())IconButton(onClick={search=""}){Text("✕")}})
   }
  }){padding->
-  val swipe=Modifier.pointerInput(filter){var dx=0f;detectHorizontalDragGestures(onHorizontalDrag={_,d->dx+=d},onDragEnd={if(dx < -65f)filter=when(filter){GalleryFilter.ALL->GalleryFilter.VIDEOS;GalleryFilter.VIDEOS->GalleryFilter.PHOTOS;GalleryFilter.PHOTOS->GalleryFilter.PHOTOS};if(dx>65f)filter=when(filter){GalleryFilter.ALL->GalleryFilter.ALL;GalleryFilter.VIDEOS->GalleryFilter.ALL;GalleryFilter.PHOTOS->GalleryFilter.VIDEOS};dx=0f},onDragCancel={dx=0f})}
+  val swipe=Modifier.pointerInput(filter){var dx=0f;detectHorizontalDragGestures(onHorizontalDrag={_,d->dx+=d},onDragEnd={if(dx < -65f)filter=when(filter){GalleryFilter.ALL->GalleryFilter.VIDEOS;GalleryFilter.VIDEOS->GalleryFilter.PHOTOS;GalleryFilter.PHOTOS->GalleryFilter.PHOTOS;GalleryFilter.STARS->GalleryFilter.STARS};if(dx>65f)filter=when(filter){GalleryFilter.ALL->GalleryFilter.ALL;GalleryFilter.VIDEOS->GalleryFilter.ALL;GalleryFilter.PHOTOS->GalleryFilter.VIDEOS;GalleryFilter.STARS->GalleryFilter.PHOTOS};dx=0f},onDragCancel={dx=0f})}
   PullToRefreshBox(isRefreshing=refreshing,onRefresh={refreshing=true;onRefresh()},modifier=Modifier.fillMaxSize().padding(padding).then(swipe)){
    LaunchedEffect(refreshToken){refreshing=false}
    if(volume==null){
