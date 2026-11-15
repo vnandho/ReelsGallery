@@ -5,6 +5,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
@@ -13,6 +14,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
+import kotlinx.coroutines.launch
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -31,18 +33,21 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 private data class FolderEntry(val path:String,val name:String)
 private sealed interface GalleryEntry { data class Folder(val folder:FolderEntry):GalleryEntry; data class File(val media:LocalMedia):GalleryEntry }
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun GalleryScreen(media:List<LocalMedia>,settings:SettingsStore,refreshToken:Int,onRefresh:()->Unit,onOpenSettings:()->Unit,onOpenMedia:(LocalMedia,List<LocalMedia>)->Unit) {
  var filter by remember { mutableStateOf(GalleryFilter.ALL) }; var sort by remember { mutableStateOf(MediaSort.NEWEST) }
+ val starredKeys = remember { mutableStateOf(settings.starredMediaKeys) }
+ val snackbarHostState = remember { SnackbarHostState() }
+ val snackbarScope = rememberCoroutineScope()
  var search by remember { mutableStateOf("") }; var groupByType by remember { mutableStateOf(false) }; var volume by remember { mutableStateOf<String?>(null) }
  var path by remember { mutableStateOf("") }; var sortMenu by remember { mutableStateOf(false) }; var refreshing by remember { mutableStateOf(false) }
  val columns=remember(refreshToken){settings.gridColumns}
  val scoped=remember(media,volume){media.filter{volume==null||it.volumeName==volume}}
  val visible=remember(scoped,filter,sort,search){ 
-  val f=scoped.filter{(filter==GalleryFilter.ALL||(filter==GalleryFilter.VIDEOS&&it.isVideo)||(filter==GalleryFilter.PHOTOS&&!it.isVideo))&&(search.isBlank()||it.displayName.contains(search.trim(),true))}
+  val f=scoped.filter{(filter==GalleryFilter.ALL||(filter==GalleryFilter.VIDEOS&&it.isVideo)||(filter==GalleryFilter.PHOTOS&&!it.isVideo)||(filter==GalleryFilter.STARS&&starredKeys.value.contains(it.uri.toString())))&&(search.isBlank()||it.displayName.contains(search.trim(),true))}
   val ordered=when(sort){MediaSort.NEWEST->f.sortedByDescending{it.dateAddedSeconds};MediaSort.OLDEST->f.sortedBy{it.dateAddedSeconds};MediaSort.NAME->f.sortedBy{it.displayName.lowercase()};MediaSort.SIZE->f.sortedByDescending{it.sizeBytes};MediaSort.DURATION->f.sortedByDescending{it.durationMs}}
-  if(filter==GalleryFilter.ALL&&groupByType) ordered.sortedBy { if(it.isVideo) 0 else 1 } else ordered
+  ordered.sortedWith(compareByDescending<LocalMedia>{starredKeys.value.contains(it.uri.toString())}.thenBy { if(filter==GalleryFilter.ALL&&groupByType) { if(it.isVideo) 0 else 1 } else 0 })
  }
  val roots=remember(visible){MediaRepository.storageRoots(visible)}
  val folders=remember(visible,path){
@@ -57,7 +62,7 @@ fun GalleryScreen(media:List<LocalMedia>,settings:SettingsStore,refreshToken:Int
  val entries=remember(folders,directFiles){folders.map{GalleryEntry.Folder(it)}+directFiles.map{GalleryEntry.File(it)}}
  fun back(){ if(path.isNotEmpty()) path=path.trimEnd('/').substringBeforeLast('/',"").let{if(it.isEmpty())"" else "$it/"} else volume=null }
  BackHandler(enabled=volume!=null){back()}
- Scaffold(containerColor=MaterialTheme.colorScheme.background,topBar={
+ Scaffold(containerColor=MaterialTheme.colorScheme.background,snackbarHost={SnackbarHost(snackbarHostState)},topBar={
   Column(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal=16.dp,vertical=8.dp)){
    Row(verticalAlignment=Alignment.CenterVertically){
     if(volume!=null) TextButton(onClick={back()}){Text("‹ Back")} else Column(Modifier.weight(1f)){Text("REELS GALLERY",style=MaterialTheme.typography.titleLarge);Text("Local media library",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}
@@ -66,7 +71,7 @@ fun GalleryScreen(media:List<LocalMedia>,settings:SettingsStore,refreshToken:Int
     IconButton(onClick=onOpenSettings){Text("⚙",style=MaterialTheme.typography.titleLarge)}
    }
    Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(5.dp)){
-    listOf(GalleryFilter.ALL,GalleryFilter.VIDEOS,GalleryFilter.PHOTOS).forEach{f->val label=when(f){GalleryFilter.ALL->"All";GalleryFilter.VIDEOS->"Videos";GalleryFilter.PHOTOS->"Images"};FilterChip(selected=filter==f,onClick={filter=f},label={Text(label)})}
+    listOf(GalleryFilter.ALL,GalleryFilter.VIDEOS,GalleryFilter.PHOTOS,GalleryFilter.STARS).forEach{f->val label=when(f){GalleryFilter.ALL->"All";GalleryFilter.VIDEOS->"Videos";GalleryFilter.PHOTOS->"Images";GalleryFilter.STARS->"★ Stars"};FilterChip(selected=filter==f,onClick={filter=f},label={Text(label)})}
     Spacer(Modifier.weight(1f))
     Box{TextButton(onClick={sortMenu=true}){Text("Sort by ▾")};DropdownMenu(expanded=sortMenu,onDismissRequest={sortMenu=false}){MediaSort.entries.filter{filter!=GalleryFilter.PHOTOS||it!=MediaSort.DURATION}.forEach{m->DropdownMenuItem(text={Text(m.label())},onClick={sort=m;sortMenu=false})};if(filter==GalleryFilter.ALL){HorizontalDivider();DropdownMenuItem(text={Text(if(groupByType) "Ungroup media" else "Group by type")},onClick={groupByType=!groupByType;sortMenu=false})}}}
    }
@@ -85,18 +90,19 @@ fun GalleryScreen(media:List<LocalMedia>,settings:SettingsStore,refreshToken:Int
    else LazyVerticalGrid(GridCells.Fixed(columns),Modifier.fillMaxSize().navigationBarsPadding(),contentPadding=PaddingValues(12.dp),horizontalArrangement=Arrangement.spacedBy(9.dp),verticalArrangement=Arrangement.spacedBy(10.dp)){
     items(entries,key={when(it){is GalleryEntry.Folder->"folder:"+it.folder.path;is GalleryEntry.File->"file:"+it.media.uri}}){entry->when(entry){
      is GalleryEntry.Folder->Card(Modifier.fillMaxWidth().clickable{path=entry.folder.path},shape=RoundedCornerShape(14.dp)){Column(Modifier.padding(14.dp)){Text("📁",style=MaterialTheme.typography.headlineMedium);Text(entry.folder.name,maxLines=2,overflow=TextOverflow.Ellipsis,style=MaterialTheme.typography.labelLarge);Text("Folder",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}}
-     is GalleryEntry.File->{val item=entry.media;val q=when(filter){GalleryFilter.ALL->directFiles;GalleryFilter.VIDEOS->directFiles.filter{it.isVideo};GalleryFilter.PHOTOS->directFiles.filter{!it.isVideo}};MediaTile(item){onOpenMedia(item,q.ifEmpty{listOf(item)})}}
+     is GalleryEntry.File->{val item=entry.media;val q=when(filter){GalleryFilter.ALL->directFiles;GalleryFilter.VIDEOS->directFiles.filter{it.isVideo};GalleryFilter.PHOTOS->directFiles.filter{!it.isVideo};GalleryFilter.STARS->directFiles.filter{starredKeys.value.contains(it.uri.toString())}};MediaTile(item,isStarred=starredKeys.value.contains(item.uri.toString()),onClick={onOpenMedia(item,q.ifEmpty{listOf(item)})},onLongClick={val next=!starredKeys.value.contains(item.uri.toString());settings.setStarred(item.uri.toString(),next);starredKeys.value=settings.starredMediaKeys;snackbarScope.launch{snackbarHostState.showSnackbar(if(next)"Di Favorit kan" else "Favorit Dinonaktifkan")}})}
     }}
    }
   }
  }
 }
-@Composable private fun MediaTile(item:LocalMedia,onClick:()->Unit){
+@Composable private fun MediaTile(item:LocalMedia,isStarred:Boolean,onClick:()->Unit,onLongClick:()->Unit){
  val context=LocalContext.current
  val bitmap:Bitmap? by produceState<Bitmap?>(null,item.uri){value=withContext(Dispatchers.IO){MediaRepository.thumbnail(context,item.uri)}}
- Column(Modifier.fillMaxWidth().clickable(onClick=onClick)){
+ Column(Modifier.fillMaxWidth().combinedClickable(onClick=onClick,onLongClick=onLongClick)){
   Box(Modifier.fillMaxWidth().aspectRatio(.78f).clip(RoundedCornerShape(13.dp)).background(MaterialTheme.colorScheme.surfaceVariant)){
    if(bitmap!=null) Image(bitmap!!.asImageBitmap(),item.displayName,Modifier.fillMaxSize(),contentScale=ContentScale.Crop) else Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center){Text(if(item.isVideo)"▶" else "▧",style=MaterialTheme.typography.headlineLarge)}
+   if(isStarred) Surface(Modifier.align(Alignment.TopEnd).padding(6.dp),color=Color.Black.copy(alpha=.78f),shape=RoundedCornerShape(20.dp)){Text("★",Modifier.padding(horizontal=8.dp,vertical=4.dp),color=Color(0xFFFFD54F),style=MaterialTheme.typography.titleSmall)}
    if(item.isVideo) Surface(Modifier.align(Alignment.BottomEnd).padding(6.dp),color=Color.Black.copy(alpha=.8f),shape=RoundedCornerShape(6.dp)){Text(formatDuration(item.durationMs),Modifier.padding(6.dp),style=MaterialTheme.typography.labelSmall,color=Color.White)}
   };Spacer(Modifier.height(4.dp));Text(item.displayName,maxLines=1,overflow=TextOverflow.Ellipsis,style=MaterialTheme.typography.labelMedium)
  }
