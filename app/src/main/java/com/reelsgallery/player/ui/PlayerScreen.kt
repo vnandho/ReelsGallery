@@ -94,7 +94,9 @@ fun PlayerScreen(
     onNavigateToMedia: (LocalMedia, Int) -> Unit = { _, _ -> },
     settings: SettingsStore,
     activity: androidx.activity.ComponentActivity,
-    onClose: () -> Unit
+    onClose: () -> Unit,
+    onToggleStar: (LocalMedia) -> Unit = {},
+    isStarred: (LocalMedia) -> Boolean = { false }
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -128,6 +130,7 @@ fun PlayerScreen(
     var speed by remember { mutableFloatStateOf(1f) }
     var resizeMode by remember { mutableIntStateOf(AspectRatioFrameLayout.RESIZE_MODE_FIT) }
     var fullscreen by remember { mutableStateOf(false) }
+    var starRefresh by remember { mutableIntStateOf(0) }
     var interactionId by remember { mutableIntStateOf(0) }
     var overlayMessage by remember { mutableStateOf<String?>(null) }
     var brightnessIndicator by remember { mutableStateOf<String?>(null) }
@@ -541,6 +544,11 @@ fun PlayerScreen(
                             touchInteraction()
                         }) {
                             Text(if (repeatMode == Player.REPEAT_MODE_OFF) "⟲" else if (repeatMode == Player.REPEAT_MODE_ONE) "↻¹" else "↻", color = Color.White, style = MaterialTheme.typography.titleLarge)
+                        }
+                        val playingMedia = safeQueue.getOrNull(exoPlayer.currentMediaItemIndex) ?: safeQueue.first()
+                        val currentlyStarred = remember(starRefresh, exoPlayer.currentMediaItemIndex) { isStarred(playingMedia) }
+                        TextButton(onClick = { onToggleStar(playingMedia); starRefresh++; overlayMessage = if (isStarred(playingMedia)) "Di Favorit kan" else "Favorit Dinonaktifkan"; touchInteraction() }, modifier = Modifier.size(42.dp)) {
+                            Text(if (currentlyStarred) "★" else "☆", color = if (currentlyStarred) Color(0xFFFFD54F) else Color.White, style = MaterialTheme.typography.titleLarge)
                         }
                         TextButton(onClick = {
                                 fullscreen = !fullscreen
