@@ -81,11 +81,11 @@ fun GalleryScreen(media:List<LocalMedia>,settings:SettingsStore,refreshToken:Int
    OutlinedTextField(value=search,onValueChange={search=it},modifier=Modifier.fillMaxWidth(),singleLine=true,placeholder={Text("Search media")},shape=RoundedCornerShape(14.dp),trailingIcon={if(search.isNotEmpty())IconButton(onClick={search=""}){Text("✕")}})
   }
  }){padding->
-  val swipe=Modifier.pointerInput(filter){var dx=0f;detectHorizontalDragGestures(onHorizontalDrag={_,d->dx+=d},onDragEnd={if(dx < -65f)filter=when(filter){GalleryFilter.ALL->GalleryFilter.VIDEOS;GalleryFilter.VIDEOS->GalleryFilter.PHOTOS;GalleryFilter.PHOTOS->GalleryFilter.PHOTOS;GalleryFilter.STARS->GalleryFilter.STARS};if(dx>65f)filter=when(filter){GalleryFilter.ALL->GalleryFilter.ALL;GalleryFilter.VIDEOS->GalleryFilter.ALL;GalleryFilter.PHOTOS->GalleryFilter.VIDEOS;GalleryFilter.STARS->GalleryFilter.PHOTOS};dx=0f},onDragCancel={dx=0f})}
+  val swipe=Modifier.pointerInput(filter){var dx=0f;detectHorizontalDragGestures(onHorizontalDrag={_,d->dx+=d},onDragEnd={if(dx < -65f)filter=when(filter){GalleryFilter.ALL->GalleryFilter.VIDEOS;GalleryFilter.VIDEOS->GalleryFilter.PHOTOS;GalleryFilter.PHOTOS->GalleryFilter.STARS;GalleryFilter.STARS->GalleryFilter.STARS};if(dx>65f)filter=when(filter){GalleryFilter.ALL->GalleryFilter.ALL;GalleryFilter.VIDEOS->GalleryFilter.ALL;GalleryFilter.PHOTOS->GalleryFilter.VIDEOS;GalleryFilter.STARS->GalleryFilter.PHOTOS};dx=0f},onDragCancel={dx=0f})}
   PullToRefreshBox(isRefreshing=refreshing,onRefresh={refreshing=true;onRefresh()},modifier=Modifier.fillMaxSize().padding(padding).then(swipe)){
    LaunchedEffect(refreshToken){refreshing=false}
    if(volume==null){
-    if(roots.isEmpty()) EmptyGallery(if(filter==GalleryFilter.STARS)"No starred media yet" else "No media storage found",if(filter==GalleryFilter.STARS)"Hold any photo or video for 2 seconds to add it to Stars." else "Allow photo and video access, then refresh.")
+    if(roots.isEmpty()) EmptyGallery(if(filter==GalleryFilter.STARS)"No starred media yet" else "No media storage found",if(filter==GalleryFilter.STARS)"Hold any photo or video for 1 second to add it to Stars." else "Allow photo and video access, then refresh.")
     else LazyVerticalGrid(GridCells.Fixed(2),Modifier.fillMaxSize().navigationBarsPadding(),contentPadding=PaddingValues(14.dp),horizontalArrangement=Arrangement.spacedBy(12.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
      items(roots,key={it.volumeName}){r->Card(Modifier.fillMaxWidth().clickable{volume=r.volumeName;path=""},shape=RoundedCornerShape(18.dp)){Column(Modifier.padding(18.dp)){Text(if(r.isRemovable)"▣" else "▤",style=MaterialTheme.typography.displaySmall);Text(r.label,style=MaterialTheme.typography.titleMedium);Text("${r.itemCount} media files",color=MaterialTheme.colorScheme.onSurfaceVariant)}}}
     }
@@ -107,7 +107,7 @@ fun GalleryScreen(media:List<LocalMedia>,settings:SettingsStore,refreshToken:Int
    val down = awaitFirstDown(requireUnconsumed = false)
    var released = false
    var cancelled = false
-   val timedOut = withTimeoutOrNull(2000L) {
+   val timedOut = withTimeoutOrNull(1000L) {
     while (true) {
      val event = awaitPointerEvent()
      val change = event.changes.firstOrNull { it.id == down.id }
