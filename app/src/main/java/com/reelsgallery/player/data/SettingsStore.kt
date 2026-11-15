@@ -5,6 +5,17 @@ import android.content.Context
 class SettingsStore(context: Context) {
     private val prefs = context.getSharedPreferences("reels_gallery_settings", Context.MODE_PRIVATE)
 
+    val starredMediaKeys: Set<String>
+        get() = prefs.getStringSet("starred_media_keys", emptySet())?.toSet() ?: emptySet()
+
+    fun isStarred(key: String): Boolean = starredMediaKeys.contains(key)
+
+    fun setStarred(key: String, starred: Boolean) {
+        val updated = starredMediaKeys.toMutableSet()
+        if (starred) updated.add(key) else updated.remove(key)
+        prefs.edit().putStringSet("starred_media_keys", updated).apply()
+    }
+
     var appearance: String
         get() = prefs.getString("appearance", "DARK") ?: "DARK"
         set(value) = prefs.edit().putString("appearance", value.takeIf { it in setOf("DARK", "LIGHT", "SYSTEM") } ?: "DARK").apply()
