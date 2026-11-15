@@ -47,12 +47,12 @@ fun GalleryScreen(media:List<LocalMedia>,settings:SettingsStore,refreshToken:Int
  var path by remember { mutableStateOf("") }; var sortMenu by remember { mutableStateOf(false) }; var refreshing by remember { mutableStateOf(false) }
  val columns=remember(refreshToken){settings.gridColumns}
  val scoped=remember(media,volume){media.filter{volume==null||it.volumeName==volume}}
- val visible=remember(scoped,filter,sort,search){ 
+ val visible=remember(scoped,filter,sort,search,starredKeys.value){ 
   val f=scoped.filter{(filter==GalleryFilter.ALL||(filter==GalleryFilter.VIDEOS&&it.isVideo)||(filter==GalleryFilter.PHOTOS&&!it.isVideo)||(filter==GalleryFilter.STARS&&starredKeys.value.contains(it.uri.toString())))&&(search.isBlank()||it.displayName.contains(search.trim(),true))}
   val ordered=when(sort){MediaSort.NEWEST->f.sortedByDescending{it.dateAddedSeconds};MediaSort.OLDEST->f.sortedBy{it.dateAddedSeconds};MediaSort.NAME->f.sortedBy{it.displayName.lowercase()};MediaSort.SIZE->f.sortedByDescending{it.sizeBytes};MediaSort.DURATION->f.sortedByDescending{it.durationMs}}
   ordered.sortedWith(compareByDescending<LocalMedia>{starredKeys.value.contains(it.uri.toString())}.thenBy { if(filter==GalleryFilter.ALL&&groupByType) { if(it.isVideo) 0 else 1 } else 0 })
  }
- val roots=remember(visible){MediaRepository.storageRoots(visible)}
+ val roots=remember(scoped){MediaRepository.storageRoots(scoped)}
  val folders=remember(visible,path){
   visible.mapNotNull { item ->
    val p=item.relativePath.trimStart('/')
@@ -102,7 +102,7 @@ fun GalleryScreen(media:List<LocalMedia>,settings:SettingsStore,refreshToken:Int
 @Composable private fun MediaTile(item:LocalMedia,isStarred:Boolean,onClick:()->Unit,onLongClick:()->Unit){
  val context=LocalContext.current
  val bitmap:Bitmap? by produceState<Bitmap?>(null,item.uri){value=withContext(Dispatchers.IO){MediaRepository.thumbnail(context,item.uri)}}
- Column(Modifier.fillMaxWidth().pointerInput(item.uri) {
+ Column(Modifier.fillMaxWidth().pointerInput(item.uri,onClick,onLongClick) {
   awaitEachGesture {
    val down = awaitFirstDown(requireUnconsumed = false)
    var released = false
