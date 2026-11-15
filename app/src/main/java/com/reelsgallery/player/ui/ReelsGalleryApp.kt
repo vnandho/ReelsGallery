@@ -118,7 +118,9 @@ fun ReelsGalleryApp(activity: androidx.activity.ComponentActivity) {
                         onNavigateToMedia = { next, index -> queueStart = index; selectedMedia = next },
                         settings = settings,
                         activity = activity,
-                        onClose = { selectedMedia = null }
+                        onClose = { selectedMedia = null },
+                        onToggleStar = { current -> settings.setStarred(current.uri.toString(), !settings.isStarred(current.uri.toString())) },
+                        isStarred = { current -> settings.isStarred(current.uri.toString()) }
                     )
                 } else {
                     PhotoViewer(item = item, queue = queue, startIndex = queueStart, onClose = { selectedMedia = null }, onNavigate = { next, index -> selectedMedia = next; queueStart = index })
