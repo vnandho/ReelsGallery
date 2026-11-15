@@ -5,7 +5,9 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
@@ -15,6 +17,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -99,7 +102,28 @@ fun GalleryScreen(media:List<LocalMedia>,settings:SettingsStore,refreshToken:Int
 @Composable private fun MediaTile(item:LocalMedia,isStarred:Boolean,onClick:()->Unit,onLongClick:()->Unit){
  val context=LocalContext.current
  val bitmap:Bitmap? by produceState<Bitmap?>(null,item.uri){value=withContext(Dispatchers.IO){MediaRepository.thumbnail(context,item.uri)}}
- Column(Modifier.fillMaxWidth().combinedClickable(onClick=onClick,onLongClick=onLongClick)){
+ Column(Modifier.fillMaxWidth().pointerInput(item.uri) {
+  awaitEachGesture {
+   val down = awaitFirstDown(requireUnconsumed = false)
+   var released = false
+   var cancelled = false
+   val timedOut = withTimeoutOrNull(2000L) {
+    while (true) {
+     val event = awaitPointerEvent()
+     val change = event.changes.firstOrNull { it.id == down.id }
+     if (change == null || !change.pressed) { released = true; break }
+     if ((change.position - down.position).getDistance() > viewConfiguration.touchSlop) { cancelled = true; break }
+    }
+    false
+   } == null
+   if (timedOut && !cancelled) {
+    onLongClick()
+    waitForUpOrCancellation()
+   } else if (released && !cancelled) {
+    onClick()
+   }
+  }
+ }){
   Box(Modifier.fillMaxWidth().aspectRatio(.78f).clip(RoundedCornerShape(13.dp)).background(MaterialTheme.colorScheme.surfaceVariant)){
    if(bitmap!=null) Image(bitmap!!.asImageBitmap(),item.displayName,Modifier.fillMaxSize(),contentScale=ContentScale.Crop) else Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center){Text(if(item.isVideo)"▶" else "▧",style=MaterialTheme.typography.headlineLarge)}
    if(isStarred) Surface(Modifier.align(Alignment.TopEnd).padding(6.dp),color=Color.Black.copy(alpha=.78f),shape=RoundedCornerShape(20.dp)){Text("★",Modifier.padding(horizontal=8.dp,vertical=4.dp),color=Color(0xFFFFD54F),style=MaterialTheme.typography.titleSmall)}
