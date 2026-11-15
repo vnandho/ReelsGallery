@@ -4,5 +4,5 @@ data class LocalMedia(val id:Long,val uri:Uri,val displayName:String,val mimeTyp
  val folderLabel:String get()=relativePath.trimEnd('/').substringAfterLast('/').ifBlank { "Other" }
 }
 data class StorageRoot(val volumeName:String,val label:String,val itemCount:Int,val isRemovable:Boolean)
-enum class GalleryFilter { ALL, VIDEOS, PHOTOS }
+enum class GalleryFilter { ALL, VIDEOS, PHOTOS, STARS }
 enum class MediaSort { NEWEST, OLDEST, NAME, SIZE, DURATION }
