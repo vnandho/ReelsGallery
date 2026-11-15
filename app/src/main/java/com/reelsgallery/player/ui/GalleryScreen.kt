@@ -47,12 +47,12 @@ fun GalleryScreen(media:List<LocalMedia>,settings:SettingsStore,refreshToken:Int
  var path by remember { mutableStateOf("") }; var sortMenu by remember { mutableStateOf(false) }; var refreshing by remember { mutableStateOf(false) }
  val columns=remember(refreshToken){settings.gridColumns}
  val scoped=remember(media,volume){media.filter{volume==null||it.volumeName==volume}}
- val visible=remember(scoped,filter,sort,search,starredKeys.value){ 
+ val visible=remember(scoped,filter,sort,search,starredKeys.value,groupByType){ 
   val f=scoped.filter{(filter==GalleryFilter.ALL||(filter==GalleryFilter.VIDEOS&&it.isVideo)||(filter==GalleryFilter.PHOTOS&&!it.isVideo)||(filter==GalleryFilter.STARS&&starredKeys.value.contains(it.uri.toString())))&&(search.isBlank()||it.displayName.contains(search.trim(),true))}
   val ordered=when(sort){MediaSort.NEWEST->f.sortedByDescending{it.dateAddedSeconds};MediaSort.OLDEST->f.sortedBy{it.dateAddedSeconds};MediaSort.NAME->f.sortedBy{it.displayName.lowercase()};MediaSort.SIZE->f.sortedByDescending{it.sizeBytes};MediaSort.DURATION->f.sortedByDescending{it.durationMs}}
   ordered.sortedWith(compareByDescending<LocalMedia>{starredKeys.value.contains(it.uri.toString())}.thenBy { if(filter==GalleryFilter.ALL&&groupByType) { if(it.isVideo) 0 else 1 } else 0 })
  }
- val roots=remember(scoped){MediaRepository.storageRoots(scoped)}
+ val roots=remember(visible){MediaRepository.storageRoots(visible)}
  val folders=remember(visible,path){
   visible.mapNotNull { item ->
    val p=item.relativePath.trimStart('/')
@@ -85,7 +85,7 @@ fun GalleryScreen(media:List<LocalMedia>,settings:SettingsStore,refreshToken:Int
   PullToRefreshBox(isRefreshing=refreshing,onRefresh={refreshing=true;onRefresh()},modifier=Modifier.fillMaxSize().padding(padding).then(swipe)){
    LaunchedEffect(refreshToken){refreshing=false}
    if(volume==null){
-    if(roots.isEmpty()) EmptyGallery("No media storage found","Allow photo and video access, then refresh.")
+    if(roots.isEmpty()) EmptyGallery(if(filter==GalleryFilter.STARS)"No starred media yet" else "No media storage found",if(filter==GalleryFilter.STARS)"Hold any photo or video for 2 seconds to add it to Stars." else "Allow photo and video access, then refresh.")
     else LazyVerticalGrid(GridCells.Fixed(2),Modifier.fillMaxSize().navigationBarsPadding(),contentPadding=PaddingValues(14.dp),horizontalArrangement=Arrangement.spacedBy(12.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
      items(roots,key={it.volumeName}){r->Card(Modifier.fillMaxWidth().clickable{volume=r.volumeName;path=""},shape=RoundedCornerShape(18.dp)){Column(Modifier.padding(18.dp)){Text(if(r.isRemovable)"▣" else "▤",style=MaterialTheme.typography.displaySmall);Text(r.label,style=MaterialTheme.typography.titleMedium);Text("${r.itemCount} media files",color=MaterialTheme.colorScheme.onSurfaceVariant)}}}
     }
